@@ -16,7 +16,8 @@
   ],
   "scripts": {
     "start": "sdk-commands start",
-    "start:mobile": "sdk-commands start --web",
+    "start:web": "sdk-commands start --web",
+    "start:phone": "sdk-commands start --mobile",
     "build": "sdk-commands build",
     "deploy": "sdk-commands deploy --target-content https://worlds-content-server.decentraland.org",
     "deploy:world": "./deploy.sh",

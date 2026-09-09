@@ -284,23 +284,53 @@ headless Multiplayer Server alongside it.
 
 ### Testing multiplayer locally
 
-Mood Match needs two players to do anything, so open a second client:
+Mood Match needs two players to do anything, so you need two clients.
+
+**Browser, no install required** — this is the easiest route:
 
 ```bash
-# leave npm start running, then open a second explorer against the same preview
-open "decentraland://realm=http://127.0.0.1:8000&local-scene=true&debug=true"
+npm run start:web
 ```
 
-Or click Preview a second time in the Creator Hub. Each window is a separate
-player. Walk both into the same pad and tap Form Circle on both.
+That prints and opens a URL of the form:
+
+```
+https://decentraland.org/bevy-web/?preview=true&realm=http://127.0.0.1:8000&position=0,0
+```
+
+Open that **same URL in a second browser window** (use a different profile, or one
+normal window plus one incognito) and you have two independent players. Walk both
+into the same pad and tap Form Circle on each.
+
+> Chromium-based browsers gate websites from reaching localhost. When the browser
+> asks to access apps on your device, click **Allow**. If the scene never loads and
+> no prompt appeared, enable it manually at
+> `chrome://settings/content/siteDetails?site=https%3A%2F%2Fdecentraland.org`
+> then reload — the toggle is "Apps on device" (Chrome 145+) or
+> "Local network access" (Chrome 142-144).
+
+**Desktop Client** — richer, but needs an install from
+[dcl.gg/explorer](https://dcl.gg/explorer). Once installed, plain `npm start`
+launches it via a `decentraland://` deep link, and `--multi-instance` allows a
+second copy:
+
+```bash
+npm start -- --multi-instance
+```
+
+Without the Desktop Client installed, that deep link fails with
+`kLSApplicationNotFoundErr` — nothing claims the `decentraland://` URL scheme.
+Use `npm run start:web` instead.
 
 ### Testing on a phone
 
 ```bash
-npm run start:mobile     # opens the Bevy web client, which shows a QR code
+npm run start:phone
 ```
 
-Scan the QR with the Decentraland mobile app on the same network.
+This prints a QR code in the terminal. Scan it with the **Decentraland mobile app**
+on a phone connected to the **same WiFi** as your machine — the QR points at your
+LAN address, not localhost, so a phone on cellular data cannot reach it.
 
 ### Other commands
 
