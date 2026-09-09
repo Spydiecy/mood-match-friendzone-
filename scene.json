@@ -1,0 +1,58 @@
+{
+  "ecs7": true,
+  "runtimeVersion": "7",
+  "display": {
+    "title": "Mood Match",
+    "description": "A cooperative emotion puzzle for mobile. Get a mood, find other players, form a circle and clear a 10-second mini-game together for points on a persistent leaderboard.",
+    "navmapThumbnail": "images/scene-thumbnail.png"
+  },
+  "tags": [
+    "game",
+    "social"
+  ],
+  "main": "bin/index.js",
+  "scene": {
+    "parcels": [
+      "0,0",
+      "1,0",
+      "0,1",
+      "1,1"
+    ],
+    "base": "0,0"
+  },
+  "spawnPoints": [
+    {
+      "name": "plaza-south",
+      "default": true,
+      "position": {
+        "x": [
+          13,
+          19
+        ],
+        "y": [
+          0,
+          0
+        ],
+        "z": [
+          5,
+          7
+        ]
+      },
+      "cameraTarget": {
+        "x": 16,
+        "y": 1.8,
+        "z": 16
+      }
+    }
+  ],
+  "requiredPermissions": [
+    "OPEN_EXTERNAL_LINK"
+  ],
+  "featureToggles": {
+    "voiceChat": "enabled"
+  },
+  "worldConfiguration": {
+    "name": "CHANGE-ME.dcl.eth"
+  },
+  "authoritativeMultiplayer": true
+}

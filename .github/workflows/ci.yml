@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Check rules, typecheck and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify the composite is in sync with the layout config
+        # The composite is generated from tools/build-composite.py. If someone
+        # edits pad positions in config.ts without regenerating, this fails
+        # rather than shipping a scene whose pads and hitboxes disagree.
+        run: |
+          cp assets/scene/main.composite /tmp/committed.composite
+          python3 tools/build-composite.py
+          if ! diff -q /tmp/committed.composite assets/scene/main.composite; then
+            echo "::error::main.composite is out of date. Run 'npm run composite' and commit the result."
+            diff /tmp/committed.composite assets/scene/main.composite || true
+            exit 1
+          fi
+
+      - name: Check game rules
+        run: npm run check
+
+      - name: Production build and typecheck
+        run: npm run build:production
+
+      - name: Report deployable payload size
+        run: du -sh assets bin images main.crdt

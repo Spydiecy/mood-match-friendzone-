@@ -1,0 +1,57 @@
+name: Deploy to Decentraland World
+
+# Deploying signs a blockchain-authenticated payload with a wallet key, so this
+# is NOT wired to run automatically on every push to main. It is manual by
+# default: an accidental deploy takes the live World down for the conversion
+# window, and the signing key should be used deliberately.
+#
+# To enable it:
+#   1. Add a repository secret DCL_PRIVATE_KEY - the private key of the wallet
+#      that owns the Decentraland NAME.
+#   2. Set worldConfiguration.name in scene.json, or pass the world input below.
+#   3. Run the workflow from the Actions tab.
+
+on:
+  workflow_dispatch:
+    inputs:
+      world:
+        description: 'World to deploy to (e.g. mood-match.dcl.eth). Blank uses scene.json.'
+        required: false
+        default: ''
+
+jobs:
+  deploy:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    # A single concurrent deploy: two overlapping publishes to the same World
+    # would race on the content server.
+    concurrency:
+      group: dcl-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Fail early if no signing key is configured
+        env:
+          DCL_PRIVATE_KEY: ${{ secrets.DCL_PRIVATE_KEY }}
+        run: |
+          if [ -z "$DCL_PRIVATE_KEY" ]; then
+            echo "::error::DCL_PRIVATE_KEY secret is not set. Add it in Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+      - name: Check game rules
+        run: npm run check
+
+      - name: Deploy
+        env:
+          DCL_PRIVATE_KEY: ${{ secrets.DCL_PRIVATE_KEY }}
+        run: ./deploy.sh ${{ github.event.inputs.world }}

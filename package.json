@@ -1,0 +1,44 @@
+{
+  "name": "mood-match",
+  "version": "1.0.0",
+  "description": "Mood Match - a mobile-first cooperative emotion puzzle for Decentraland, built for the Friendzone Mobile Buildathon",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Spydiecy/mood-match-friendzone-.git"
+  },
+  "keywords": [
+    "decentraland",
+    "sdk7",
+    "multiplayer",
+    "mobile",
+    "social-game"
+  ],
+  "scripts": {
+    "start": "sdk-commands start",
+    "start:mobile": "sdk-commands start --web",
+    "build": "sdk-commands build",
+    "deploy": "sdk-commands deploy --target-content https://worlds-content-server.decentraland.org",
+    "deploy:world": "./deploy.sh",
+    "server-logs": "sdk-commands sdk-server-logs",
+    "composite": "python3 tools/build-composite.py",
+    "upgrade-sdk": "npm install --save-dev @dcl/sdk@auth-server @dcl/js-runtime@auth-server",
+    "build:production": "sdk-commands build --production",
+    "check": "node tools/run-checks.js",
+    "verify": "npm run check && npm run build"
+  },
+  "devDependencies": {
+    "@dcl/js-runtime": "7.27.1-33533530571.commit-451d001",
+    "@dcl/sdk": "auth-server"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "prettier": {
+    "semi": false,
+    "singleQuote": true,
+    "printWidth": 100,
+    "trailingComma": "none"
+  }
+}

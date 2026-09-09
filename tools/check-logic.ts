@@ -1,0 +1,249 @@
+/**
+ * Mood Match - logic checks for the shared game rules.
+ *
+ * The combo table and the score maths are the two places where a silent mistake
+ * would be invisible in-world but would quietly pay players the wrong amount, so
+ * they get checked directly. These modules are deliberately free of engine
+ * imports, which is what makes them runnable outside the scene sandbox.
+ *
+ * Run with:  npm run check
+ */
+
+import {
+  COMBOS,
+  countUnlockedSkins,
+  dayIndexUtc,
+  evaluateCombo,
+  featuredEmotionForDay,
+  isSkinUnlocked,
+  withSkinUnlocked
+} from '../src/shared/emotions'
+import { computeScore, maxPossibleScore, streakBonusFor } from '../src/shared/scoring'
+import { EMOTION_COUNT, EmotionId } from '../src/shared/types'
+import {
+  FEATURED_MULTIPLIER,
+  POINTS_BASE,
+  POINTS_COMBO,
+  POINTS_MINIGAME,
+  STREAK_MAX_BONUS
+} from '../src/shared/config'
+
+let failures = 0
+let checks = 0
+
+function check(label: string, actual: unknown, expected: unknown): void {
+  checks++
+  const a = JSON.stringify(actual)
+  const e = JSON.stringify(expected)
+  if (a !== e) {
+    failures++
+    console.log(`FAIL  ${label}\n      expected ${e}\n      actual   ${a}`)
+  }
+}
+
+function checkTrue(label: string, value: boolean): void {
+  check(label, value, true)
+}
+
+/* -------------------------------------------------------------------------- */
+/* Combos                                                                    */
+/* -------------------------------------------------------------------------- */
+
+const { Calm, Joy, Focus, Energy, Love, Curiosity } = EmotionId
+
+// A solo player can never earn a combo - circles are the unit of play.
+check('solo has no combo', evaluateCombo([Calm]).id, '')
+check('empty has no combo', evaluateCombo([]).id, '')
+
+// The named combos from the design brief.
+check('harmony', evaluateCombo([Calm, Joy, Focus]).id, 'harmony')
+check('spark', evaluateCombo([Energy, Curiosity, Joy]).id, 'spark')
+check('devotion', evaluateCombo([Love, Calm, Focus]).id, 'devotion')
+
+// Four distinct emotions is the top pattern and must beat the three-way combos
+// even though those also match.
+check('spectrum beats harmony', evaluateCombo([Calm, Joy, Focus, Love]).id, 'spectrum')
+
+// Two-player patterns.
+check('duet: calm + energy', evaluateCombo([Calm, Energy]).id, 'duet')
+check('duet is order independent', evaluateCombo([Energy, Calm]).id, 'duet')
+check('twin flame', evaluateCombo([Joy, Joy]).id, 'twinflame')
+check('twin flame with three', evaluateCombo([Joy, Joy, Joy]).id, 'twinflame')
+
+// A non-complementary pair still forms a circle, just without a bonus.
+check('plain pair has no combo', evaluateCombo([Calm, Focus]).id, '')
+check('plain pair pays no bonus', evaluateCombo([Calm, Focus]).bonus, 0)
+
+// Three distinct emotions that match no named pattern fall back to Open Triad.
+check('open triad', evaluateCombo([Calm, Energy, Love]).id, 'triad')
+
+// Every matched combo pays the same bonus, so no combination is a trap.
+for (const combo of COMBOS) {
+  const sample = sampleFor(combo.id)
+  if (!sample) continue
+  check(`${combo.id} pays POINTS_COMBO`, evaluateCombo(sample).bonus, POINTS_COMBO)
+}
+
+function sampleFor(id: string): EmotionId[] | null {
+  switch (id) {
+    case 'spectrum':
+      return [Calm, Joy, Focus, Love]
+    case 'harmony':
+      return [Calm, Joy, Focus]
+    case 'spark':
+      return [Energy, Curiosity, Joy]
+    case 'devotion':
+      return [Love, Calm, Focus]
+    case 'triad':
+      return [Calm, Energy, Love]
+    case 'duet':
+      return [Calm, Energy]
+    case 'twinflame':
+      return [Joy, Joy]
+    default:
+      return null
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Daily rotation                                                            */
+/* -------------------------------------------------------------------------- */
+
+// The rotation must visit every emotion across any six consecutive days,
+// otherwise some emotions would never get their featured day.
+const day = dayIndexUtc()
+const seen = new Set<number>()
+for (let offset = 0; offset < EMOTION_COUNT; offset++) {
+  seen.add(featuredEmotionForDay(day + offset))
+}
+check('rotation covers all emotions in 6 days', seen.size, EMOTION_COUNT)
+
+// Deterministic: the same day must always give the same answer, on every client.
+check('rotation is deterministic', featuredEmotionForDay(1000), featuredEmotionForDay(1000))
+
+// Must stay in range even for a negative day index (clock set before 1970).
+checkTrue(
+  'rotation stays in range for negative days',
+  featuredEmotionForDay(-7) >= 0 && featuredEmotionForDay(-7) < EMOTION_COUNT
+)
+
+/* -------------------------------------------------------------------------- */
+/* Skin unlock bitmask                                                       */
+/* -------------------------------------------------------------------------- */
+
+check('no skins by default', countUnlockedSkins(0), 0)
+check('unlock sets the bit', isSkinUnlocked(withSkinUnlocked(0, Focus), Focus), true)
+check('unlock is targeted', isSkinUnlocked(withSkinUnlocked(0, Focus), Joy), false)
+check('unlock is idempotent', withSkinUnlocked(withSkinUnlocked(0, Joy), Joy), withSkinUnlocked(0, Joy))
+
+let allSkins = 0
+for (let i = 0; i < EMOTION_COUNT; i++) allSkins = withSkinUnlocked(allSkins, i as EmotionId)
+check('all skins counts 6', countUnlockedSkins(allSkins), EMOTION_COUNT)
+
+/* -------------------------------------------------------------------------- */
+/* Streak bonus                                                              */
+/* -------------------------------------------------------------------------- */
+
+check('day 1 has no streak bonus', streakBonusFor(1), 0)
+check('day 0 is treated as day 1', streakBonusFor(0), 0)
+check('day 2 gives 5%', round(streakBonusFor(2)), 0.05)
+check('day 11 hits the cap', streakBonusFor(11), STREAK_MAX_BONUS)
+check('streak is capped', streakBonusFor(500), STREAK_MAX_BONUS)
+
+function round(value: number): number {
+  return Math.round(value * 1000) / 1000
+}
+
+/* -------------------------------------------------------------------------- */
+/* Score maths                                                               */
+/* -------------------------------------------------------------------------- */
+
+// Worst case: a circle formed, nothing else.
+check(
+  'base only',
+  computeScore({
+    comboMatched: false,
+    miniGameSuccess: false,
+    playerEmotion: Calm,
+    featuredEmotion: Joy,
+    streakDays: 1
+  }).total,
+  POINTS_BASE
+)
+
+// Combo plus mini-game, no multipliers.
+check(
+  'combo + minigame',
+  computeScore({
+    comboMatched: true,
+    miniGameSuccess: true,
+    playerEmotion: Calm,
+    featuredEmotion: Joy,
+    streakDays: 1
+  }).total,
+  POINTS_BASE + POINTS_COMBO + POINTS_MINIGAME
+)
+
+// The featured multiplier applies BEFORE the streak percentage.
+check(
+  'featured doubles the subtotal',
+  computeScore({
+    comboMatched: true,
+    miniGameSuccess: true,
+    playerEmotion: Joy,
+    featuredEmotion: Joy,
+    streakDays: 1
+  }).total,
+  (POINTS_BASE + POINTS_COMBO + POINTS_MINIGAME) * FEATURED_MULTIPLIER
+)
+
+// 60 * 2 * 1.5 = 180 is the theoretical ceiling for one circle.
+const ceiling = computeScore({
+  comboMatched: true,
+  miniGameSuccess: true,
+  playerEmotion: Joy,
+  featuredEmotion: Joy,
+  streakDays: 11
+})
+check('ceiling total', ceiling.total, 180)
+check('maxPossibleScore agrees with computeScore', maxPossibleScore(11), ceiling.total)
+
+// The breakdown must itemise to the same figure the player is paid, or the result
+// panel would be lying.
+const itemised = computeScore({
+  comboMatched: true,
+  miniGameSuccess: false,
+  playerEmotion: Joy,
+  featuredEmotion: Joy,
+  streakDays: 3
+})
+check(
+  'breakdown reconciles',
+  itemised.total,
+  Math.round(
+    (itemised.base + itemised.combo + itemised.miniGame) *
+      itemised.featuredMultiplier *
+      (1 + itemised.streakBonus)
+  )
+)
+
+// Scores must always be whole numbers - a fractional score would render badly and
+// desync from the server's integer component field.
+for (let streak = 1; streak <= 12; streak++) {
+  const result = computeScore({
+    comboMatched: true,
+    miniGameSuccess: true,
+    playerEmotion: Joy,
+    featuredEmotion: Joy,
+    streakDays: streak
+  })
+  checkTrue(`streak ${streak} total is an integer`, Number.isInteger(result.total))
+}
+
+/* -------------------------------------------------------------------------- */
+
+console.log(`\n${checks - failures}/${checks} checks passed`)
+if (failures > 0) {
+  console.log(`${failures} FAILED`)
+  process.exit(1)
+}
