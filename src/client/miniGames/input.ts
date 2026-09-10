@@ -13,12 +13,13 @@
  */
 
 import { HOLD_KEEPALIVE_MS } from '../../shared/config'
-import { GameInputKind } from '../../shared/types'
+import { EmotionId, GameInputKind } from '../../shared/types'
 import { sendGameInput } from '../circle'
 import { playSfx } from '../audio'
 import { practiceColorTap, practiceHold, practiceTap } from '../practice'
-import { EmotionId } from '../../shared/types'
 import { state } from '../state'
+import { RoundView } from './round'
+import { TapVerdict, registerTap, resetTapFeel } from './tapFeel'
 
 /** True while the local player is holding their zone. */
 let holding = false
@@ -26,13 +27,30 @@ let holding = false
 /** Local time the next keepalive is due. */
 let nextKeepalive = 0
 
-/** Rhythm Tap: register a tap. */
-export function inputTap(): void {
+/**
+ * Rhythm Tap: register a tap.
+ *
+ * The local verdict is computed FIRST so the ring flashes on the same frame the
+ * thumb lands. The server still judges the tap independently and owns the score;
+ * this only drives feedback. Without it there is a visible round-trip delay
+ * between tapping and anything happening, which makes the game unplayable as a
+ * rhythm game.
+ */
+export function inputTap(round?: RoundView): void {
   if (state.practice) {
     practiceTap()
     return
   }
-  playSfx('tap')
+
+  let verdict: TapVerdict = 'none'
+  if (round) {
+    verdict = registerTap(round, Date.now())
+  }
+
+  // A missed tap gets a quieter cue than a hit, so the audio reinforces the
+  // rhythm rather than rewarding mashing.
+  if (verdict !== 'miss') playSfx('tap')
+
   sendGameInput(GameInputKind.Tap)
 }
 
@@ -100,4 +118,5 @@ export function tickHoldKeepalive(now: number): void {
 export function resetInput(): void {
   holding = false
   nextKeepalive = 0
+  resetTapFeel()
 }

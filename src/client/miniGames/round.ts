@@ -16,6 +16,12 @@ import { toLocalTime } from '../utils/serverClock'
 
 /** Everything a mini-game panel needs to render and accept input. */
 export interface RoundView {
+  /**
+   * Identifies this round. Real circles use the server's circleId; a practice run
+   * uses its own start time. Local prediction keys off this to reset between
+   * rounds.
+   */
+  circleId: number
   game: MiniGameKind
   /** Local-clock time at which play begins. */
   startsAt: number
@@ -43,6 +49,7 @@ export interface RoundView {
 /** Projects a synced pad into a round view. */
 export function roundFromPad(pad: PadView): RoundView {
   return {
+    circleId: pad.circleId,
     game: pad.game,
     startsAt: toLocalTime(pad.startsAt),
     endsAt: toLocalTime(pad.endsAt),
@@ -65,6 +72,8 @@ export function roundFromPractice(
   myEmotion: EmotionId
 ): RoundView {
   return {
+    // Negative, so a practice round can never collide with a server circleId.
+    circleId: -practice.startsAt,
     game: practice.game,
     startsAt: practice.startsAt,
     endsAt: practice.endsAt,

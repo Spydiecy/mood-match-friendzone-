@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generates `images/scene-thumbnail.png` - the image shown in the Decentraland map
+Generates `images/mood-match-thumbnail.png` - the image shown in the Decentraland map
 modal, the teleport confirmation and the Places listing.
 
 Written with raw zlib/struct rather than an image library so it has no
@@ -214,7 +214,7 @@ png += chunk(b"IDAT", zlib.compress(bytes(raw), 9))
 png += chunk(b"IEND", b"")
 
 os.makedirs("images", exist_ok=True)
-out_path = os.path.join("images", "scene-thumbnail.png")
+out_path = os.path.join("images", "mood-match-thumbnail.png")
 with open(out_path, "wb") as handle:
     handle.write(png)
 

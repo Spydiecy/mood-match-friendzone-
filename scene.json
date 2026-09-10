@@ -4,7 +4,7 @@
   "display": {
     "title": "Mood Match",
     "description": "A cooperative emotion puzzle for mobile. Get a mood, find other players, form a circle and clear a 10-second mini-game together for points on a persistent leaderboard.",
-    "navmapThumbnail": "images/scene-thumbnail.png"
+    "navmapThumbnail": "images/mood-match-thumbnail.png"
   },
   "tags": [
     "game",
@@ -46,7 +46,8 @@
     }
   ],
   "requiredPermissions": [
-    "OPEN_EXTERNAL_LINK"
+    "OPEN_EXTERNAL_LINK",
+    "ALLOW_TO_TRIGGER_AVATAR_EMOTE"
   ],
   "featureToggles": {
     "voiceChat": "enabled"

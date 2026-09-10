@@ -131,6 +131,16 @@ export function cancelWaiting(): void {
   room.send('cancelReady', { padIndex: state.nearestPad })
 }
 
+/**
+ * Calls out to everyone in the World that you are waiting for company.
+ *
+ * The one genuinely useful thing a lone player can do. The server rate-limits and
+ * relays it, so it cannot be spammed or forged.
+ */
+export function pingPlaza(): void {
+  room.send('pingPlaza', { padIndex: Math.max(0, state.nearestPad) })
+}
+
 /** Sends one mini-game input for the local player's active circle. */
 export function sendGameInput(kind: GameInputKind, value = 0): void {
   const pad = state.myPad

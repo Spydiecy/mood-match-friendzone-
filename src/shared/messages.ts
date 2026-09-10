@@ -69,6 +69,17 @@ export const MoodMessages = {
     value: Schemas.Int
   }),
 
+  /**
+   * "I am waiting here, come and play." Broadcast to everyone in the World.
+   *
+   * This is the scene's answer to the cold-start problem: one player alone can
+   * still do something useful, which is summon the others. The server rate-limits
+   * it so it cannot become spam.
+   */
+  pingPlaza: Schemas.Map({
+    padIndex: Schemas.Int
+  }),
+
   /* ---------------------------------------------------------------- server -> client */
 
   /** Transient toast. `code` lets the client pick a localised string if needed. */
@@ -94,6 +105,17 @@ export const MoodMessages = {
   circleResolved: Schemas.Map({
     circleId: Schemas.Int,
     success: Schemas.Boolean
+  }),
+
+  /**
+   * Somebody is waiting and wants company. Relayed to every client by the server
+   * so it cannot be forged or spammed by a client talking to its peers directly.
+   */
+  plazaPing: Schemas.Map({
+    padIndex: Schemas.Int,
+    fromName: Schemas.String,
+    /** The waiting player's EmotionId, so the toast can be colour-coded. */
+    emotion: Schemas.Int
   }),
 
   /**

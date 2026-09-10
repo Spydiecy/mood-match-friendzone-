@@ -216,6 +216,59 @@ function registerHandlers(): void {
     if (!record) return
     handleGameInput(record, data.circleId, data.kind as GameInputKind, data.value)
   })
+
+  room.onMessage('pingPlaza', (data, context) => {
+    const record = senderRecord(context?.from)
+    if (!record) return
+    relayPlazaPing(record, data.padIndex)
+  })
+}
+
+/** Last ping time per player, for the per-player rate limit. */
+const lastPingAt = new Map<string, number>()
+
+/** Minimum gap between one player's pings. */
+const PING_COOLDOWN_MS = 25_000
+
+/** Last time ANY ping went out, so a busy plaza cannot become a toast storm. */
+let lastGlobalPingAt = 0
+const PING_GLOBAL_COOLDOWN_MS = 8000
+
+/**
+ * Relays a "come and play" ping to every client.
+ *
+ * Rate-limited on two axes on purpose. Per-player stops one person spamming;
+ * global stops five people all pinging at once and burying everyone in toasts.
+ * The relay goes through the server rather than client-to-client so the sender
+ * name cannot be forged and the limits cannot be bypassed.
+ */
+function relayPlazaPing(record: PlayerRecord, padIndex: number): void {
+  const now = Date.now()
+
+  const previous = lastPingAt.get(record.address) ?? 0
+  if (now - previous < PING_COOLDOWN_MS) {
+    const wait = Math.ceil((PING_COOLDOWN_MS - (now - previous)) / 1000)
+    notify(
+      record.address,
+      RefusalCode.None,
+      `Hold on ${wait}s before calling the plaza again.`,
+      NoticeTone.Info
+    )
+    return
+  }
+
+  if (now - lastGlobalPingAt < PING_GLOBAL_COOLDOWN_MS) return
+
+  lastPingAt.set(record.address, now)
+  lastGlobalPingAt = now
+
+  room.send('plazaPing', {
+    padIndex: Math.max(0, Math.min(2, padIndex)),
+    fromName: record.displayName,
+    emotion: record.emotion
+  })
+
+  console.log('[SERVER] plaza ping from', record.address, 'pad', padIndex)
 }
 
 /** Resolves a message sender to a live record. */

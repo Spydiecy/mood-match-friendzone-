@@ -16,6 +16,7 @@ import { COLORS, FONT, RADIUS, SPACE, TOUCH, emotionColor } from '../ui/theme'
 import { ProgressBar, Row, Text } from '../ui/widgets'
 import { RoundView, countdownSeconds, inCountdown, secondsLeft } from './round'
 import { inputTap } from './input'
+import { currentVerdict, flashIntensity, tapStreak } from './tapFeel'
 
 /** Beats in a full round. */
 function beatCount(round: RoundView): number {
@@ -45,9 +46,22 @@ export function RhythmTapPanel(props: { round: RoundView }) {
   const now = Date.now()
   const pulse = beatPulse(round, now)
 
+  // Local, immediate feedback. The server owns the score; this owns the feel.
+  const verdict = currentVerdict(now)
+  const flash = flashIntensity(now)
+  const streak = tapStreak()
+
   const baseSize = 190
-  const size = Math.round(baseSize * (1 + pulse * 0.28))
-  const ringColor = emotionColor(round.memberEmotions[round.myIndex] ?? 0)
+  // The ring swells on the beat AND kicks on a confirmed hit, so a well-timed tap
+  // visibly lands rather than just being counted.
+  const size = Math.round(baseSize * (1 + pulse * 0.28 + flash * 0.16))
+  const myEmotion = round.memberEmotions[round.myIndex] ?? 0
+  const ringColor =
+    verdict === 'hit'
+      ? COLORS.good
+      : verdict === 'miss'
+        ? COLORS.bad
+        : emotionColor(myEmotion)
   const counting = inCountdown(round, now)
 
   return (
@@ -81,7 +95,15 @@ export function RhythmTapPanel(props: { round: RoundView }) {
           uiBackground={{ color: COLORS.surface }}
         >
           <Text
-            value={counting ? String(countdownSeconds(round, now)) : 'TAP'}
+            value={
+              counting
+                ? String(countdownSeconds(round, now))
+                : verdict === 'hit'
+                  ? 'YES'
+                  : verdict === 'miss'
+                    ? 'OFF'
+                    : 'TAP'
+            }
             fontSize={counting ? FONT.hero : FONT.title}
             color={ringColor}
             height={Math.round(FONT.hero * 1.2)}
@@ -91,10 +113,14 @@ export function RhythmTapPanel(props: { round: RoundView }) {
 
       <Row width="100%" justifyContent="center" marginTop={SPACE.sm}>
         <Text
-          value={`Group taps ${round.hits} / ${targetHits(round)}`}
+          value={
+            streak >= 2
+              ? `${streak} in a row  -  group ${round.hits} / ${targetHits(round)}`
+              : `Group taps ${round.hits} / ${targetHits(round)}`
+          }
           fontSize={FONT.body}
-          color={COLORS.textDim}
-          width={520}
+          color={streak >= 3 ? COLORS.good : COLORS.textDim}
+          width={620}
         />
       </Row>
 
@@ -124,7 +150,17 @@ export function RhythmTapAction(props: { round: RoundView }) {
   const now = Date.now()
   const ready = !inCountdown(round, now)
   const pulse = beatPulse(round, now)
-  const accent = emotionColor(round.memberEmotions[round.myIndex] ?? 0, ready ? 1 : 0.4)
+  const verdict = currentVerdict(now)
+  const flash = flashIntensity(now)
+
+  // The button itself confirms the tap, so the player's thumb never covers the
+  // only piece of feedback on screen.
+  const accent =
+    verdict === 'hit'
+      ? COLORS.good
+      : verdict === 'miss'
+        ? COLORS.bad
+        : emotionColor(round.memberEmotions[round.myIndex] ?? 0, ready ? 1 : 0.4)
 
   return (
     <UiEntity
@@ -134,19 +170,25 @@ export function RhythmTapAction(props: { round: RoundView }) {
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: RADIUS.pill,
-        borderWidth: Math.round(2 + pulse * 10),
+        borderWidth: Math.round(2 + pulse * 10 + flash * 10),
         borderColor: accent,
         pointerFilter: 'block'
       }}
       uiBackground={{ color: ready ? COLORS.surface : COLORS.chip }}
       onMouseDown={() => {
-        if (ready) inputTap()
+        if (ready) inputTap(round)
       }}
     >
       <Text
-        value={ready ? 'TAP ON THE BEAT' : 'WAIT FOR THE BEAT'}
+        value={
+          !ready
+            ? 'WAIT FOR THE BEAT'
+            : tapStreak() >= 2
+              ? `${tapStreak()} IN A ROW`
+              : 'TAP ON THE BEAT'
+        }
         fontSize={FONT.heading}
-        color={ready ? COLORS.text : COLORS.textDim}
+        color={ready ? (tapStreak() >= 2 ? COLORS.good : COLORS.text) : COLORS.textDim}
         height={Math.round(FONT.heading * 1.3)}
       />
     </UiEntity>

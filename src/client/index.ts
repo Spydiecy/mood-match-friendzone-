@@ -18,9 +18,16 @@ import { NoticeTone, room } from '../shared/messages'
 import { Leaderboard, PlayerStat, ServerHeartbeat, WorldState } from '../shared/schemas'
 import { EmotionId } from '../shared/types'
 import { applyMuteState, playSfx, setupAudio } from './audio'
-import { refreshPadProximity, refreshPadViews } from './circle'
+import { PAD_NAMES, refreshPadProximity, refreshPadViews } from './circle'
+import {
+  emoteCircleFormed,
+  emoteFailure,
+  emotePingAck,
+  emoteSuccess,
+  emoteWaiting
+} from './emotes'
 import { assignInitialEmotion } from './emotions'
-import { tickHoldKeepalive } from './miniGames/input'
+import { resetInput, tickHoldKeepalive } from './miniGames/input'
 import { setupTouchControls } from './mobile/touchControls'
 import { tickPractice } from './practice'
 import { expireTransients, showNotice, state } from './state'
@@ -69,6 +76,11 @@ function registerHandlers(): void {
     playSfx('form')
     const pad = state.pads[data.padIndex]
     burstAt(data.padIndex, pad?.memberEmotions[0] ?? state.emotion)
+
+    // Everyone in the circle raises a hand at the same instant. This is the
+    // moment the group becomes a group, and it should be visible in-world rather
+    // than only in the HUD.
+    if (pad?.mine) emoteCircleFormed()
   })
 
   room.onMessage('circleResolved', (data) => {
@@ -77,6 +89,15 @@ function registerHandlers(): void {
     // not chime every time somebody else finishes a round.
     if (pad?.mine) {
       playSfx(data.success ? 'success' : 'fail')
+      // A mood-specific dance on a win, a shrug on a loss. Losing together should
+      // read as a shared joke, which is what makes people want another go.
+      if (data.success) {
+        emoteSuccess(state.emotion)
+      } else {
+        emoteFailure()
+      }
+      // The round is over, so drop any predicted tap state and stuck hold.
+      resetInput()
     }
     if (pad && data.success) {
       burstAt(pad.padIndex, pad.memberEmotions[0] ?? state.emotion)
@@ -103,6 +124,16 @@ function registerHandlers(): void {
     if (data.unlockedSkin >= 0) {
       showNotice('New emotion skin unlocked', NoticeTone.Success, 5000)
     }
+  })
+
+  room.onMessage('plazaPing', (data) => {
+    // Your own ping should not shout at you.
+    if (data.fromName === state.myName) return
+
+    const padName = PAD_NAMES[data.padIndex] ?? 'plaza'
+    showNotice(`${data.fromName} is waiting at the ${padName} - go play!`, NoticeTone.Success, 6000)
+    playSfx('form')
+    emotePingAck()
   })
 
   room.onMessage('profileSync', (data) => {
@@ -143,10 +174,34 @@ function clientTick(dt: number): void {
 
   tickHoldKeepalive(now)
   tickPractice(dtMs, now)
+  tickWaitingEmote(now)
 
   sendHelloWhenReady()
   expireTransients(now)
   updateVisuals(now)
+}
+
+/** Next time the waiting wave is due. */
+let nextWaitingEmoteAt = 0
+
+/** How often you wave while waiting on a pad. */
+const WAITING_EMOTE_INTERVAL_MS = 5000
+
+/**
+ * Waves periodically while you are waiting on a pad.
+ *
+ * A waving avatar is legible from across the plaza in a way a glowing ring is
+ * not, so this is the scene's strongest "come and join me" signal. Everyone else
+ * sees it for free - emotes are replicated by the platform, not by our sync.
+ */
+function tickWaitingEmote(now: number): void {
+  if (!state.waiting || state.myPad) {
+    nextWaitingEmoteAt = 0
+    return
+  }
+  if (now < nextWaitingEmoteAt) return
+  nextWaitingEmoteAt = now + WAITING_EMOTE_INTERVAL_MS
+  emoteWaiting()
 }
 
 /**

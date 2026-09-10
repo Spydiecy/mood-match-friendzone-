@@ -15,6 +15,7 @@ import { EMOTIONS, getEmotion, randomEmotion } from '../shared/emotions'
 import { room } from '../shared/messages'
 import { EMOTION_COUNT, EmotionId } from '../shared/types'
 import { playSfx } from './audio'
+import { emoteReroll } from './emotes'
 import { state } from './state'
 
 /** Assigns the starting emotion. Called once, during client boot. */
@@ -42,8 +43,11 @@ export function rerollEmotion(): void {
 
 /** Selects a specific emotion and tells the server. */
 export function setEmotion(emotion: EmotionId): void {
+  const changed = state.emotion !== emotion
   state.emotion = emotion
   playSfx('reroll')
+  // Only celebrate an actual change, so re-tapping your current mood is quiet.
+  if (changed) emoteReroll()
   room.send('setEmotion', { emotion })
 }
 

@@ -43,6 +43,29 @@ let scoredBeats = new Set<number>()
 /** Local clock at which the finished panel should disappear. */
 let clearAt = 0
 
+/**
+ * Best practice result this session, per game.
+ *
+ * Scenes have no client-side persistence, so this is session-only and
+ * deliberately never sent to the server - practice must not touch the leaderboard.
+ * Its whole job is to give a lone player a number to beat during the minute
+ * before somebody else turns up.
+ */
+const personalBest: Record<number, number> = {}
+
+/** Practice rounds cleared this session, shown as a small nudge. */
+let practiceCleared = 0
+
+/** Best progress (0..1) achieved in a given mini-game this session. */
+export function practiceBest(game: MiniGameKind): number {
+  return personalBest[game] ?? 0
+}
+
+/** How many practice rounds have been cleared this session. */
+export function practiceClearedCount(): number {
+  return practiceCleared
+}
+
 /** Starts a practice round of a specific game, or a random one. */
 export function startPractice(game?: MiniGameKind): void {
   const chosen = game ?? (Math.floor(Math.random() * 3) as MiniGameKind)
@@ -205,12 +228,26 @@ function finish(practice: PracticeState, success: boolean, now: number): void {
   practice.progress = success ? 1 : practice.progress
   clearAt = now + RESULT_MS
 
+  const previousBest = personalBest[practice.game] ?? 0
+  const beatIt = practice.progress > previousBest
+  if (beatIt) personalBest[practice.game] = practice.progress
+  if (success) practiceCleared++
+
   playSfx(success ? 'success' : 'fail')
-  showNotice(
-    success
-      ? 'Practice cleared. Real circles need 2 or more players - and they score.'
-      : 'Practice run over. Try again, or grab a friend for the real thing.',
-    success ? NoticeTone.Success : NoticeTone.Info,
-    RESULT_MS
-  )
+
+  // Always end on something to do next: either a new best to beat, or the nudge
+  // that the real thing scores and needs a second player.
+  let message: string
+  if (success) {
+    message =
+      practiceCleared === 1
+        ? 'Cleared it. Now do that with someone else and it actually scores.'
+        : `Cleared ${practiceCleared} practice runs. Real circles score - grab a friend.`
+  } else if (beatIt) {
+    message = `New best: ${Math.round(practice.progress * 100)}%. Go again.`
+  } else {
+    message = `Best so far ${Math.round(previousBest * 100)}%. Go again, or call the plaza.`
+  }
+
+  showNotice(message, success ? NoticeTone.Success : NoticeTone.Info, RESULT_MS)
 }

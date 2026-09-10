@@ -17,10 +17,10 @@ import { MIN_CIRCLE_PLAYERS, PAD_RADIUS } from '../../shared/config'
 import { getEmotion } from '../../shared/emotions'
 import { maxPossibleScore } from '../../shared/scoring'
 import { CirclePhase } from '../../shared/types'
-import { PAD_NAMES, cancelWaiting, requestFormCircle, waitingElsewhere } from '../circle'
+import { PAD_NAMES, cancelWaiting, pingPlaza, requestFormCircle, waitingElsewhere } from '../circle'
 import { MiniGameAction, MiniGamePanel, miniGameBrief, miniGameName } from '../miniGames'
 import { roundFromPad, roundFromPractice } from '../miniGames/round'
-import { startPractice, stopPractice } from '../practice'
+import { practiceBest, startPractice, stopPractice } from '../practice'
 import { getLayout } from '../mobile/safeArea'
 import { state } from '../state'
 import { COLORS, FONT, RADIUS, SPACE, TOUCH, emotionColor, emotionShade, toneColor } from './theme'
@@ -338,7 +338,13 @@ function PracticeRound() {
         width={720}
       />
       <Text
-        value="Practice scores nothing. Real circles need 2 or more players."
+        value={
+          practiceBest(practice.game) > 0
+            ? `Practice scores nothing - but your best here is ${Math.round(
+                practiceBest(practice.game) * 100
+              )}%`
+            : 'Practice scores nothing. Real circles need 2 or more players.'
+        }
         fontSize={FONT.small}
         color={COLORS.textDim}
         width={780}
@@ -448,7 +454,10 @@ function PlazaGuidance() {
   if (state.waiting) {
     const needed = Math.max(0, MIN_CIRCLE_PLAYERS - waitingHere)
     headline = needed > 0 ? `Waiting for ${needed} more` : 'Circle forming'
-    detail = 'Stay inside the ring. Anyone who steps in and taps joins you.'
+    detail =
+      state.playersOnline > 1
+        ? 'Stay in the ring. Your avatar is waving - someone will see it.'
+        : 'You are the only one here. Tap Call to ping everyone in the World.'
   } else if (onPad) {
     headline = `You are on the ${PAD_NAMES[state.nearestPad]}`
     detail =
@@ -571,10 +580,18 @@ export function ActionRow() {
             state.screen = 'leaderboard'
           }}
         />
+        {/*
+          The single most useful button when the plaza is empty: it tells everyone
+          in the World that somebody is here and waiting. Highlighted while you are
+          actually waiting, because that is when it matters.
+        */}
         <IconButton
-          label="Practice"
-          onClick={() => startPractice()}
+          label="Call"
+          onClick={() => pingPlaza()}
+          active={state.waiting}
+          background={state.waiting ? COLORS.surface : COLORS.chip}
         />
+        <IconButton label="Practice" onClick={() => startPractice()} />
         <IconButton
           label="Info"
           onClick={() => {
@@ -605,7 +622,11 @@ function PrimaryAction() {
     return (
       <PrimaryButton
         label="Walk to a Mood Pad"
-        sublabel="Three glowing rings around the plaza"
+        sublabel={
+          state.playersOnline > 1
+            ? `${state.playersOnline} players here now`
+            : 'Three glowing rings around the plaza'
+        }
         onClick={() => {
           // Not a no-op: surfacing the map hint is the useful action here.
           state.screen = 'info'
