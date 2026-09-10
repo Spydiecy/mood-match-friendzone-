@@ -35,6 +35,12 @@ export interface RoundView {
   holdMask: number
   /** Color Match: completed steps. */
   step: number
+  /**
+   * Color Match: bitmask of members who have confirmed the CURRENT step.
+   * This is the information that makes the game legible - without it a player
+   * cannot see whether their own tap, or anyone else's, registered.
+   */
+  stepMask: number
   /** Color Match: the target sequence. */
   sequence: EmotionId[]
   members: string[]
@@ -57,6 +63,7 @@ export function roundFromPad(pad: PadView): RoundView {
     hits: pad.hits,
     holdMask: pad.holdMask,
     step: pad.step,
+    stepMask: pad.stepMask,
     sequence: pad.sequence,
     members: pad.members,
     memberNames: pad.memberNames,
@@ -81,6 +88,8 @@ export function roundFromPractice(
     hits: practice.hits,
     holdMask: practice.holding ? 1 : 0,
     step: practice.step,
+    // Solo: the local optimistic mark in `colorFeel` supplies the confirmation.
+    stepMask: 0,
     sequence: practice.sequence,
     members: ['practice'],
     memberNames: ['You'],

@@ -607,6 +607,20 @@ export function ActionRow() {
 function PrimaryAction() {
   const onPad = state.nearestPad >= 0
 
+  // During the result phase the pad is still busy, so Form Circle would be
+  // refused with "That pad is mid-round" while the result card says "Stay on the
+  // pad to go again". Show the real state instead of offering a button that fails.
+  if (state.myPad && state.myPad.phase === CirclePhase.Result) {
+    return (
+      <PrimaryButton
+        label="Round complete"
+        sublabel="Stay put - the pad reopens in a moment"
+        onClick={() => {}}
+        disabled
+      />
+    )
+  }
+
   if (state.waiting) {
     return (
       <PrimaryButton

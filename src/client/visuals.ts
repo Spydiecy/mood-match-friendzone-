@@ -132,29 +132,69 @@ function createEmitter(position: { x: number; y: number; z: number }): Entity {
 }
 
 /**
- * Fires a one-shot burst in an emotion's colour.
+ * Pending burst requests, one slot per pad.
  *
- * Called from the circle-formed and circle-resolved message handlers, so the
- * effect lands on the exact frame the server says something happened.
+ * A one-shot particle system restarts on an `active` false -> true TRANSITION, and
+ * both writes have to be in different frames for the renderer to observe one.
+ * Doing `active = false; active = true` back to back within a single frame
+ * collapses to no change at all, which meant a pad's burst fired once after boot
+ * and then never again. So the request is queued here, armed (set false) on the
+ * next visual tick, and fired (set true) on the one after.
+ */
+const pendingBursts: (number | null)[] = [null, null, null]
+const burstStage: number[] = [0, 0, 0]
+
+/**
+ * Requests a one-shot burst in an emotion's colour.
+ *
+ * Called from the circle-formed and circle-resolved handlers. The visible burst
+ * lands within two frames, which is imperceptible and, unlike the previous
+ * same-frame toggle, actually happens.
  */
 export function burstAt(padIndex: number, emotion: number): void {
+  if (padIndex < 0 || padIndex >= pendingBursts.length) return
+  pendingBursts[padIndex] = emotion
+  burstStage[padIndex] = 0
+}
+
+/** Advances queued bursts through arm-then-fire across consecutive frames. */
+function tickBursts(): void {
   if (!handles) return
-  const entity = handles.emitters[padIndex]
-  if (entity === undefined) return
 
-  const particles = ParticleSystem.getMutableOrNull(entity)
-  if (!particles) return
+  for (let padIndex = 0; padIndex < pendingBursts.length; padIndex++) {
+    const emotion = pendingBursts[padIndex]
+    if (emotion === null) continue
 
-  const color = emotionColor(emotion)
-  particles.initialColor = { start: color, end: color }
-  particles.colorOverTime = {
-    start: Color4.create(color.r, color.g, color.b, 0.95),
-    end: Color4.create(color.r, color.g, color.b, 0)
+    const entity = handles.emitters[padIndex]
+    if (entity === undefined) {
+      pendingBursts[padIndex] = null
+      continue
+    }
+
+    const particles = ParticleSystem.getMutableOrNull(entity)
+    if (!particles) {
+      pendingBursts[padIndex] = null
+      continue
+    }
+
+    if (burstStage[padIndex] === 0) {
+      // Arm: recolour and switch off so the next frame is a real transition.
+      const color = emotionColor(emotion)
+      particles.initialColor = { start: color, end: color }
+      particles.colorOverTime = {
+        start: Color4.create(color.r, color.g, color.b, 0.95),
+        end: Color4.create(color.r, color.g, color.b, 0)
+      }
+      particles.active = false
+      burstStage[padIndex] = 1
+      continue
+    }
+
+    // Fire.
+    particles.active = true
+    pendingBursts[padIndex] = null
+    burstStage[padIndex] = 0
   }
-
-  // Re-triggering a one-shot system: toggling `active` restarts the burst.
-  particles.active = false
-  particles.active = true
 }
 
 /**
@@ -166,6 +206,7 @@ export function burstAt(padIndex: number, emotion: number): void {
 export function updateVisuals(now: number): void {
   if (!handles) return
 
+  tickBursts()
   updatePads(now)
   updateFontCrystal()
 
@@ -222,10 +263,19 @@ function updatePads(now: number): void {
   }
 }
 
-/** A 0..1 triangle wave with the given period, for pulsing. */
+/**
+ * A 0..1 triangle wave with the given period, for pulsing.
+ *
+ * QUANTISED to 24 steps. An un-quantised pulse changes every frame, so the
+ * `closeEnough` guard in `paint` could never reject anything and the scene wrote
+ * a full PBR material every single frame from boot - the exact churn this file's
+ * header claims to avoid. 24 steps is well below what the eye resolves in a slow
+ * glow but coarse enough that most frames are a no-op.
+ */
 function pulse(now: number, periodMs: number): number {
   const phase = (now % periodMs) / periodMs
-  return phase < 0.5 ? phase * 2 : 2 - phase * 2
+  const wave = phase < 0.5 ? phase * 2 : 2 - phase * 2
+  return Math.round(wave * 24) / 24
 }
 
 /** Applies an emissive colour, skipping the write when nothing changed. */
@@ -255,9 +305,14 @@ function paint(entity: Entity | null, color: Color4, intensity: number): void {
   })
 }
 
-/** True when two colours are within display precision of each other. */
+/**
+ * True when two colours are close enough that a repaint is not worth it.
+ *
+ * The threshold is deliberately looser than display precision: combined with the
+ * quantised pulse it turns a per-frame material write into an occasional one.
+ */
 function closeEnough(a: Color4, b: Color4): boolean {
-  const epsilon = 1 / 255
+  const epsilon = 1 / 96
   return (
     Math.abs(a.r - b.r) < epsilon &&
     Math.abs(a.g - b.g) < epsilon &&
@@ -277,12 +332,15 @@ function stretchBeacon(entity: Entity | null, padIndex: number, height: number):
   const transform = Transform.getMutableOrNull(entity)
   if (!transform) return
 
-  if (Math.abs(transform.scale.y - height) < 0.02) return
+  // Quantise to 20cm. Without this, a pulsing beacon rewrote its Transform and
+  // allocated two Vector3s every frame for a change nobody can see.
+  const stepped = Math.round(height * 5) / 5
+  if (Math.abs(transform.scale.y - stepped) < 0.05) return
 
-  transform.scale = Vector3.create(0.34, height, 0.34)
+  transform.scale = Vector3.create(0.34, stepped, 0.34)
   transform.position = Vector3.create(
     PAD_POSITIONS[padIndex].x,
-    height / 2,
+    stepped / 2,
     PAD_POSITIONS[padIndex].z
   )
 }

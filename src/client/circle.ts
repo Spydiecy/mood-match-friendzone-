@@ -19,6 +19,34 @@ import { PadView, state } from './state'
 /** Names of the pads as shown in the UI. Short so they fit a phone screen. */
 export const PAD_NAMES = ['North Pad', 'West Pad', 'East Pad']
 
+/** A zeroed view, used once per pad and then mutated in place. */
+function blankPadView(padIndex: number): PadView {
+  return {
+    padIndex,
+    circleId: 0,
+    phase: CirclePhase.Gathering,
+    game: MiniGameKind.RhythmTap,
+    members: [],
+    memberNames: [],
+    memberEmotions: [],
+    startsAt: 0,
+    endsAt: 0,
+    comboName: '',
+    comboBonus: 0,
+    sequence: [],
+    progress: 0,
+    hits: 0,
+    holdMask: 0,
+    step: 0,
+    stepMask: 0,
+    resolved: false,
+    success: false,
+    points: [],
+    mine: false,
+    myIndex: -1
+  }
+}
+
 /** Squared horizontal distance between two points. */
 function horizontalDistanceSq(
   a: { x: number; z: number },
@@ -64,38 +92,78 @@ export function refreshPadProximity(): void {
  * Both components live on the same entity, so one iteration covers them; they are
  * separate components purely so a progress tick does not re-send the roster.
  */
+/**
+ * Reused view objects, one per pad.
+ *
+ * Rebuilt in place rather than reallocated. The naive version built three objects
+ * and roughly eighteen copied arrays EVERY frame - about 1,200 array allocations
+ * a second in a completely empty plaza, all of it garbage for a mid-range phone
+ * to collect. Now the arrays are only re-copied when the roster identity actually
+ * changes, and the per-frame scalars are written into the existing object.
+ */
+const viewCache = new Map<number, PadView>()
+
+/** Cheap identity token: if this is unchanged, the arrays are unchanged. */
+function rosterToken(core: {
+  circleId: number
+  phase: number
+  members: readonly string[]
+}): string {
+  return `${core.circleId}:${core.phase}:${core.members.length}`
+}
+
+/** Identity tokens from the previous frame. */
+const rosterTokens = new Map<number, string>()
+
 export function refreshPadViews(): void {
   const views: PadView[] = []
   let mine: PadView | null = null
 
   for (const [entity, core] of engine.getEntitiesWith(CircleCore)) {
     const progress = CircleProgress.getOrNull(entity)
-    const members = core.members.map((address) => address)
-    const myIndex = state.myAddress ? members.indexOf(state.myAddress) : -1
 
-    const view: PadView = {
-      padIndex: core.padIndex,
-      circleId: core.circleId,
-      phase: core.phase as CirclePhase,
-      game: core.game as MiniGameKind,
-      members,
-      memberNames: core.memberNames.map((name) => name),
-      memberEmotions: core.memberEmotions.map((id) => id as EmotionId),
-      startsAt: core.startsAt,
-      endsAt: core.endsAt,
-      comboName: core.comboName,
-      comboBonus: core.comboBonus,
-      sequence: core.sequence.map((id) => id as EmotionId),
-      progress: progress?.progress ?? 0,
-      hits: progress?.hits ?? 0,
-      holdMask: progress?.holdMask ?? 0,
-      step: progress?.step ?? 0,
-      stepMask: progress?.stepMask ?? 0,
-      resolved: progress?.resolved ?? false,
-      success: progress?.success ?? false,
-      points: progress ? progress.points.map((p) => p) : [],
-      mine: myIndex !== -1,
-      myIndex
+    let view = viewCache.get(core.padIndex)
+    if (!view) {
+      view = blankPadView(core.padIndex)
+      viewCache.set(core.padIndex, view)
+    }
+
+    // Only re-copy the arrays when the roster itself changed.
+    const token = rosterToken(core)
+    if (rosterTokens.get(core.padIndex) !== token) {
+      rosterTokens.set(core.padIndex, token)
+      view.members = core.members.map((address) => address)
+      view.memberNames = core.memberNames.map((name) => name)
+      view.memberEmotions = core.memberEmotions.map((id) => id as EmotionId)
+      view.sequence = core.sequence.map((id) => id as EmotionId)
+      view.myIndex = state.myAddress ? view.members.indexOf(state.myAddress) : -1
+      view.mine = view.myIndex !== -1
+    }
+
+    // Scalars are cheap, so they are always current.
+    view.circleId = core.circleId
+    view.phase = core.phase as CirclePhase
+    view.game = core.game as MiniGameKind
+    view.startsAt = core.startsAt
+    view.endsAt = core.endsAt
+    view.comboName = core.comboName
+    view.comboBonus = core.comboBonus
+    view.progress = progress?.progress ?? 0
+    view.hits = progress?.hits ?? 0
+    view.holdMask = progress?.holdMask ?? 0
+    view.step = progress?.step ?? 0
+    view.stepMask = progress?.stepMask ?? 0
+    view.resolved = progress?.resolved ?? false
+    view.success = progress?.success ?? false
+
+    // Points only matter once the round has resolved, so this array is copied at
+    // most once per round rather than every frame.
+    if (view.resolved && progress) {
+      if (view.points.length !== progress.points.length) {
+        view.points = progress.points.map((p) => p)
+      }
+    } else if (view.points.length !== 0) {
+      view.points = []
     }
 
     views[core.padIndex] = view
@@ -110,15 +178,19 @@ export function refreshPadViews(): void {
   state.pads = views
   state.myPad = mine
 
-  // The waiting flag is derived from the gathering roster rather than tracked
-  // locally, so a server-side timeout or a wander-off clears it automatically.
-  state.waiting = views.some(
+  // Waiting is true if EITHER the server acknowledged our ready flag or we appear
+  // in a gathering roster. The roster alone was not enough: a player the server
+  // accepted but had not yet seated saw no waiting state at all, so their tap
+  // looked like it had done nothing. Neither signal is tracked locally, so a
+  // server-side timeout or a wander-off still clears it automatically.
+  const inRoster = views.some(
     (view) =>
       view &&
       view.phase === CirclePhase.Gathering &&
       state.myAddress !== '' &&
       view.members.indexOf(state.myAddress) !== -1
   )
+  state.waiting = state.serverReady || inRoster
 }
 
 /** Asks the server to form a circle on the pad the player is standing on. */

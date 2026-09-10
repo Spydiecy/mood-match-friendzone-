@@ -101,7 +101,10 @@ export function startServer(): void {
       countCircle: () => {
         circlesThisSession++
         circlesAllTime++
-      }
+      },
+      // Lets the circle machine push a released lock straight to the client,
+      // rather than the player waiting a tick to find out they are free again.
+      publishStat: writePlayerStat
     },
     (entity, syncId) =>
       // Both circle components live on the same entity but travel as separate
@@ -257,16 +260,39 @@ function relayPlazaPing(record: PlayerRecord, padIndex: number): void {
     return
   }
 
-  if (now - lastGlobalPingAt < PING_GLOBAL_COOLDOWN_MS) return
+  if (now - lastGlobalPingAt < PING_GLOBAL_COOLDOWN_MS) {
+    // Used to return silently, which made a tapped button do nothing at all.
+    notify(
+      record.address,
+      RefusalCode.None,
+      'Someone just called the plaza. Give it a moment.',
+      NoticeTone.Info
+    )
+    return
+  }
 
   lastPingAt.set(record.address, now)
   lastGlobalPingAt = now
 
+  const others = Math.max(0, allPlayers().length - 1)
+
   room.send('plazaPing', {
     padIndex: Math.max(0, Math.min(2, padIndex)),
+    fromAddress: record.address,
     fromName: record.displayName,
     emotion: record.emotion
   })
+
+  // The caller is filtered out of their own broadcast, so without this a
+  // successful Call produced no feedback at all.
+  notify(
+    record.address,
+    RefusalCode.None,
+    others > 0
+      ? `Called the plaza - ${others} player(s) notified.`
+      : 'Called out. Nobody else is here yet, so keep an eye out.',
+    NoticeTone.Success
+  )
 
   console.log('[SERVER] plaza ping from', record.address, 'pad', padIndex)
 }

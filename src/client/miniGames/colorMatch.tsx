@@ -25,6 +25,13 @@ import {
   secondsLeft
 } from './round'
 import { inputColorTap } from './input'
+import {
+  colorFlash,
+  lastTapWrong,
+  memberConfirmed,
+  myTapConfirmed,
+  myTappedColor
+} from './colorFeel'
 
 /**
  * True while the sequence is still on show.
@@ -42,6 +49,7 @@ export function ColorMatchPanel(props: { round: RoundView }) {
   const now = Date.now()
   const counting = inCountdown(round, now)
   const showing = revealing(round, now)
+  const wrongTap = lastTapWrong(now)
   const revealLeft = Math.max(
     0,
     Math.ceil((round.startsAt + SEQUENCE_REVEAL_MS - now) / 1000)
@@ -106,7 +114,44 @@ export function ColorMatchPanel(props: { round: RoundView }) {
         })}
       </Row>
 
-      <UiEntity uiTransform={{ width: 560, height: 26, margin: { top: SPACE.md } }}>
+      {/*
+        Who has confirmed the current step. This is the whole game: without it a
+        player cannot tell whether their own tap landed, nor who the group is
+        waiting on, so there is nothing to coordinate around.
+      */}
+      {!counting && !showing && round.members.length > 1 && (
+        <Row width="100%" justifyContent="center" marginTop={SPACE.sm}>
+          {round.members.map((address, index) => {
+            const confirmed = memberConfirmed(round, index)
+            const isMe = index === round.myIndex
+            return (
+              <UiEntity
+                key={`conf-${address}`}
+                uiTransform={{
+                  width: 120,
+                  height: 56,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: RADIUS.pill,
+                  borderWidth: isMe ? 3 : 0,
+                  borderColor: isMe ? COLORS.text : COLORS.none,
+                  margin: { left: SPACE.xs, right: SPACE.xs }
+                }}
+                uiBackground={{ color: confirmed ? COLORS.good : COLORS.chip }}
+              >
+                <Text
+                  value={confirmed ? 'OK' : isMe ? 'You' : shortName(round.memberNames[index] ?? '')}
+                  fontSize={FONT.small}
+                  color={confirmed ? COLORS.panel : COLORS.textDim}
+                  height={Math.round(FONT.small * 1.3)}
+                />
+              </UiEntity>
+            )
+          })}
+        </Row>
+      )}
+
+      <UiEntity uiTransform={{ width: 560, height: 26, margin: { top: SPACE.sm } }}>
         <ProgressBar value={round.progress} fill={COLORS.accent} />
       </UiEntity>
 
@@ -114,15 +159,26 @@ export function ColorMatchPanel(props: { round: RoundView }) {
         value={
           counting
             ? 'Tap the colours in order, together'
-            : `${secondsLeft(round, now)}s left`
+            : wrongTap
+              ? 'Wrong colour - the step resets, try again together'
+              : myTapConfirmed(round) && round.members.length > 1
+                ? 'You are in - waiting for the others'
+                : `${secondsLeft(round, now)}s left`
         }
         fontSize={FONT.small}
-        color={COLORS.textDim}
-        width={560}
+        color={wrongTap ? COLORS.bad : COLORS.textDim}
+        width={720}
         marginTop={SPACE.xs}
       />
     </UiEntity>
   )
+}
+
+/** Keeps a long display name inside a confirmation chip. */
+function shortName(name: string): string {
+  if (!name) return 'player'
+  if (name.length <= 7) return name
+  return name.slice(0, 6) + '.'
 }
 
 /** The bottom-centre input: up to four large colour targets. */
@@ -131,6 +187,9 @@ export function ColorMatchAction(props: { round: RoundView }) {
   const now = Date.now()
   const ready = !inCountdown(round, now) && !revealing(round, now)
   const palette = colorPalette(round.sequence)
+  const myTap = myTappedColor(round)
+  const flash = colorFlash(now)
+  const confirmed = myTapConfirmed(round)
 
   return (
     <UiEntity
@@ -147,16 +206,25 @@ export function ColorMatchAction(props: { round: RoundView }) {
           <ColorTarget
             key={`target-${emotion}`}
             emotion={emotion}
-            size={ready ? 150 : 132}
-            onClick={ready ? () => inputColorTap(emotion) : undefined}
+            // The tapped target grows briefly, so the thumb gets confirmation
+            // from the thing it actually touched.
+            size={Math.round((ready ? 150 : 132) + (myTap === emotion ? flash * 14 : 0))}
+            highlighted={myTap === emotion}
+            onClick={ready ? () => inputColorTap(emotion, round) : undefined}
           />
         ))}
       </Row>
       <Text
-        value={ready ? 'Everyone taps the same colour to advance' : 'Watch the sequence'}
+        value={
+          !ready
+            ? 'Watch the sequence'
+            : confirmed
+              ? 'Tapped - the step clears when everyone matches'
+              : 'Everyone taps the same colour to advance'
+        }
         fontSize={FONT.small}
-        color={COLORS.textDim}
-        width={720}
+        color={confirmed ? COLORS.good : COLORS.textDim}
+        width={760}
         marginTop={SPACE.xs}
       />
     </UiEntity>

@@ -28,6 +28,11 @@ import os
 SIZE = 32.0
 CENTER = (16.0, 16.0)
 
+# Must match PAD_RADIUS in src/shared/config.ts. The mesh scale is the diameter,
+# so the rendered ring is exactly the area the server accepts.
+PAD_RADIUS = 3.0
+PAD_DIAMETER = PAD_RADIUS * 2
+
 # Must match PAD_POSITIONS in src/shared/config.ts
 PADS = [
     ("A", 16.0, 23.0),
@@ -179,7 +184,7 @@ billboard(featured_sign)
 # --- Mood Pads --------------------------------------------------------------
 for label, x, z in PADS:
     pad = new_entity(f"MoodPad_{label}")
-    transform(pad, (x, 0.06, z), scale=(7.2, 0.08, 7.2))
+    transform(pad, (x, 0.06, z), scale=(PAD_DIAMETER, 0.08, PAD_DIAMETER))
     mesh(pad, "cylinder", radiusTop=0.5, radiusBottom=0.5)
     material(pad, (0.29, 0.62, 1.0), emissive=0.8, roughness=0.4)
 

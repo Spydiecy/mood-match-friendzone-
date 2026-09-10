@@ -61,31 +61,32 @@ export function LeaderboardPanel() {
             />
           </UiEntity>
         ) : (
-          <UiEntity
-            uiTransform={{
-              width: 820,
-              height: 520,
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'flex-start',
-              overflow: 'scroll'
-            }}
-          >
-            {rows.map((row, index) => (
-              <BoardRow
-                key={row.address}
-                rank={index + 1}
-                name={row.name}
-                score={row.score}
-                circles={row.circles}
-                highlight={row.address === state.myAddress}
+          /*
+            Two fixed columns rather than one scrolling list.
+
+            All ten rows are visible at once with no scrolling, because scroll
+            containers are not reliably usable on the Unity mobile client - a
+            520px container holding ~860px of rows would have left the bottom
+            four places unreachable on a phone.
+          */
+          <Row width="100%" justifyContent="center" alignItems="flex-start">
+            <BoardColumn
+              rows={rows.slice(0, 5)}
+              startRank={1}
+              myAddress={state.myAddress}
+            />
+            {rows.length > 5 && (
+              <BoardColumn
+                rows={rows.slice(5, 10)}
+                startRank={6}
+                myAddress={state.myAddress}
               />
-            ))}
-          </UiEntity>
+            )}
+          </Row>
         )}
 
         {!inTopTen && state.rank > 0 && (
-          <UiEntity uiTransform={{ width: 820, height: 90, margin: { top: SPACE.sm } }}>
+          <UiEntity uiTransform={{ width: 440, height: ROW_HEIGHT + 14, margin: { top: SPACE.sm } }}>
             <BoardRow
               rank={state.rank}
               name={state.myName || 'You'}
@@ -104,6 +105,54 @@ export function LeaderboardPanel() {
   )
 }
 
+/**
+ * One column of up to five ranked rows.
+ *
+ * Fixed height per row and an explicit column height, so the layout is identical
+ * on the Bevy and Unity explorers rather than depending on intrinsic sizing.
+ */
+function BoardColumn(props: {
+  key?: Key
+  rows: BoardRowData[]
+  startRank: number
+  myAddress: string
+}) {
+  return (
+    <UiEntity
+      uiTransform={{
+        width: 430,
+        height: 5 * (ROW_HEIGHT + SPACE.xs),
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'flex-start',
+        margin: { left: SPACE.xs, right: SPACE.xs }
+      }}
+    >
+      {props.rows.map((row, index) => (
+        <BoardRow
+          key={row.address}
+          rank={props.startRank + index}
+          name={row.name}
+          score={row.score}
+          circles={row.circles}
+          highlight={row.address === props.myAddress}
+        />
+      ))}
+    </UiEntity>
+  )
+}
+
+/** Shape of a row as held in client state. */
+interface BoardRowData {
+  address: string
+  name: string
+  score: number
+  circles: number
+}
+
+/** Height of a single ranked row. */
+const ROW_HEIGHT = 76
+
 /** One row of the board. */
 function BoardRow(props: {
   key?: Key
@@ -116,8 +165,8 @@ function BoardRow(props: {
   return (
     <UiEntity
       uiTransform={{
-        width: 800,
-        height: 80,
+        width: 420,
+        height: ROW_HEIGHT,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -131,31 +180,31 @@ function BoardRow(props: {
     >
       <Text
         value={`#${props.rank}`}
-        fontSize={FONT.body}
+        fontSize={FONT.small}
         color={props.rank === 1 ? COLORS.warn : COLORS.textDim}
         align="middle-left"
-        width={110}
+        width={62}
       />
       <Text
         value={trim(props.name)}
         fontSize={FONT.body}
         color={COLORS.text}
         align="middle-left"
-        width={380}
+        width={190}
       />
       <Text
         value={`${props.circles}c`}
         fontSize={FONT.small}
         color={COLORS.textDim}
         align="middle-right"
-        width={110}
+        width={60}
       />
       <Text
         value={String(props.score)}
         fontSize={FONT.heading}
         color={COLORS.text}
         align="middle-right"
-        width={160}
+        width={94}
       />
     </UiEntity>
   )
@@ -164,6 +213,6 @@ function BoardRow(props: {
 /** Keeps long display names from pushing the score off the row. */
 function trim(name: string): string {
   if (!name) return 'Anonymous'
-  if (name.length <= 18) return name
-  return name.slice(0, 17) + '.'
+  if (name.length <= 12) return name
+  return name.slice(0, 11) + '.'
 }

@@ -34,7 +34,11 @@ import { SPACE } from './theme'
  */
 function shouldShowTutorial(): boolean {
   if (state.tutorialDone) return false
-  if (!state.roomReady) return false
+  // Gate on the profile actually arriving, not just on the room being connected.
+  // `circles` is 0 until the server answers, so gating on the room made the
+  // tutorial flash for returning players - and if the server never woke, this
+  // full-screen modal would sit over the entire HUD indefinitely.
+  if (!state.profileLoaded) return false
   return state.circles === 0
 }
 

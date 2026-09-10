@@ -29,9 +29,29 @@ export function bindLeaderboardEntity(entity: Entity): void {
   boardEntity = entity
 }
 
-/** Seeds the board from Storage at server boot. */
+/**
+ * Seeds the board from Storage at server boot.
+ *
+ * MERGES rather than replaces. The Storage read is awaited, so a profile load or
+ * a circle resolving during a slow read can already have called `upsertScore`;
+ * replacing the array wholesale would silently discard those rows. On a conflict
+ * the higher score wins, which is always the more recent state.
+ */
 export function hydrateBoard(entries: LeaderboardEntry[]): void {
-  board = entries.slice().sort(byScoreDesc)
+  const merged = new Map<string, LeaderboardEntry>()
+
+  for (const entry of entries) {
+    merged.set(entry.address, entry)
+  }
+
+  for (const live of board) {
+    const stored = merged.get(live.address)
+    if (!stored || live.score >= stored.score) {
+      merged.set(live.address, live)
+    }
+  }
+
+  board = Array.from(merged.values()).sort(byScoreDesc)
   publish()
 }
 

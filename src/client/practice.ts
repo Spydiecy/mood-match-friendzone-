@@ -66,14 +66,34 @@ export function practiceClearedCount(): number {
   return practiceCleared
 }
 
-/** Starts a practice round of a specific game, or a random one. */
+/**
+ * Starts a practice round of a specific game, or a random one.
+ *
+ * Refuses while the player is committed to a real circle or waiting for one.
+ * Practice used to be startable while `state.waiting` was true, and since the
+ * ready flag stays hot for several seconds, anyone walking up in that window
+ * formed a circle around a player whose input was going to the trainer.
+ */
 export function startPractice(game?: MiniGameKind): void {
+  if (state.myPad) return
+  if (state.waiting) {
+    showNotice(
+      'You are waiting for a circle. Cancel first if you want to practise.',
+      NoticeTone.Info
+    )
+    return
+  }
+
   const chosen = game ?? (Math.floor(Math.random() * 3) as MiniGameKind)
   const now = Date.now()
   const startsAt = now + PRACTICE_COUNTDOWN_MS
 
   scoredBeats = new Set<number>()
   clearAt = 0
+  // No need to clear the hold latch here: `tickHoldKeepalive` releases it on the
+  // first frame where neither a real round nor a practice run is active, which
+  // always happens between two practice rounds. Importing `resetInput` for it
+  // would create a practice <-> input module cycle for no benefit.
 
   state.practice = {
     game: chosen,
@@ -156,8 +176,10 @@ export function practiceColorTap(emotion: EmotionId): void {
     practice.step++
     playSfx('tap')
   } else {
-    // Same rule the server applies: a wrong tap costs the step, not the round.
-    practice.step = 0
+    // The server's real penalty is "the group must re-tap the current step",
+    // which is meaningless solo - so practice costs one step instead. Deliberately
+    // NOT a reset to zero, which used to make the trainer harsher than the game.
+    practice.step = Math.max(0, practice.step - 1)
     playSfx('fail')
   }
 }

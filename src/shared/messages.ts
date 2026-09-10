@@ -113,6 +113,14 @@ export const MoodMessages = {
    */
   plazaPing: Schemas.Map({
     padIndex: Schemas.Int,
+    /**
+     * Lower-cased wallet address of the caller.
+     *
+     * Present so a client can filter out its OWN ping reliably. Filtering on the
+     * display name instead would also swallow the toast for any other player who
+     * happened to share a name, which is common among guests.
+     */
+    fromAddress: Schemas.String,
     fromName: Schemas.String,
     /** The waiting player's EmotionId, so the toast can be colour-coded. */
     emotion: Schemas.Int

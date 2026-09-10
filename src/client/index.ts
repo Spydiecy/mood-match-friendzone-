@@ -26,17 +26,25 @@ import {
   emoteSuccess,
   emoteWaiting
 } from './emotes'
-import { assignInitialEmotion } from './emotions'
+import { assignInitialEmotion, reconcileEmotion } from './emotions'
 import { resetInput, tickHoldKeepalive } from './miniGames/input'
 import { setupTouchControls } from './mobile/touchControls'
-import { tickPractice } from './practice'
+import { stopPractice, tickPractice } from './practice'
 import { expireTransients, showNotice, state } from './state'
 import { setupUi } from './ui/root'
 import { observeHeartbeat } from './utils/serverClock'
 import { resolveRealm } from './utils/share'
 import { burstAt, setupVisuals, updateVisuals } from './visuals'
 
-/** True once `hello` has been delivered, so we only introduce ourselves once. */
+/**
+ * True once `hello` has been delivered.
+ *
+ * Reset when the server goes away, because a restarted or cold-started server
+ * rebuilds our record from `PlayerIdentityData` with blank defaults - mood Calm
+ * and a shortened-address name. Without re-introducing ourselves the HUD would
+ * show one mood while the server scored another, changing combos and whether the
+ * featured multiplier applied, and the leaderboard would show 0x1234..abcd.
+ */
 let helloSent = false
 
 /** Boots the client. Called from `main()` on the non-server branch. */
@@ -74,16 +82,22 @@ function registerHandlers(): void {
 
   room.onMessage('circleFormed', (data) => {
     playSfx('form')
+
+    // Rebuild the views BEFORE reading them. `state.pads` is otherwise only
+    // refreshed in the system tick, so at message time it still describes the
+    // previous frame - when the pad was Gathering and `mine` was false for a
+    // player who had just been seated. Reading it stale meant the synchronised
+    // raise-hand was skipped for exactly the players it exists for.
+    refreshPadViews()
+
     const pad = state.pads[data.padIndex]
     burstAt(data.padIndex, pad?.memberEmotions[0] ?? state.emotion)
 
-    // Everyone in the circle raises a hand at the same instant. This is the
-    // moment the group becomes a group, and it should be visible in-world rather
-    // than only in the HUD.
     if (pad?.mine) emoteCircleFormed()
   })
 
   room.onMessage('circleResolved', (data) => {
+    refreshPadViews()
     const pad = state.pads.find((view) => view && view.circleId === data.circleId)
     // Only the members of a circle get the audio cue; a bystander's plaza should
     // not chime every time somebody else finishes a round.
@@ -127,8 +141,9 @@ function registerHandlers(): void {
   })
 
   room.onMessage('plazaPing', (data) => {
-    // Your own ping should not shout at you.
-    if (data.fromName === state.myName) return
+    // Filter on address: a display-name comparison also swallowed the toast for
+    // any other player sharing a name, which is common among guests.
+    if (data.fromAddress && data.fromAddress === state.myAddress) return
 
     const padName = PAD_NAMES[data.padIndex] ?? 'plaza'
     showNotice(`${data.fromName} is waiting at the ${padName} - go play!`, NoticeTone.Success, 6000)
@@ -137,6 +152,7 @@ function registerHandlers(): void {
   })
 
   room.onMessage('profileSync', (data) => {
+    state.profileLoaded = true
     state.score = data.score
     state.circles = data.circles
     state.streakDays = data.streakDays
@@ -171,6 +187,12 @@ function clientTick(dt: number): void {
 
   refreshPadProximity()
   refreshPadViews()
+
+  // A real circle always wins over the trainer. Without this the player sees the
+  // real round while their taps go to practice.
+  if (state.myPad && state.practice) {
+    stopPractice()
+  }
 
   tickHoldKeepalive(now)
   tickPractice(dtMs, now)
@@ -243,8 +265,16 @@ function readHeartbeat(now: number): void {
   }
 
   state.roomReady = isStateSyncronized()
-  state.serverAlive =
+
+  const aliveNow =
     state.lastHeartbeatSeenAt !== 0 && now - state.lastHeartbeatSeenAt < HEARTBEAT_TIMEOUT_MS
+
+  // A dead-to-alive transition means a (possibly fresh) server instance, so
+  // re-introduce ourselves and let it re-read our profile.
+  if (aliveNow && !state.serverAlive) {
+    helloSent = false
+  }
+  state.serverAlive = aliveNow
 }
 
 /** Mirrors the authoritative world state, falling back to the local rotation. */
@@ -296,11 +326,18 @@ function readMyStat(): void {
     const stat = PlayerStat.getOrNull(entity)
     if (!stat || stat.playerId !== state.myAddress) continue
 
+    state.profileLoaded = true
     state.score = stat.score
     state.circles = stat.circles
     state.streakDays = stat.streakDays
     state.unlockedMask = stat.unlockedMask
     state.rank = stat.rank
+    state.serverReady = stat.ready
+
+    // The client applies a mood change optimistically, but the server refuses it
+    // mid-circle. Reconcile once our own change has had time to land, so the HUD
+    // can never claim a mood the server is not actually scoring.
+    reconcileEmotion(stat.emotion)
     return
   }
 }

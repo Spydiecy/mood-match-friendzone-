@@ -92,6 +92,15 @@ export interface ClientState {
   rank: number
   /** True when the server reported this as the first session of a new day. */
   newDayBanner: boolean
+  /**
+   * Set once the durable profile has arrived from the server.
+   *
+   * The tutorial gates on this rather than on `circles === 0`, because `circles`
+   * starts at zero and only fills in after sync - so a returning player used to
+   * see the tutorial flash, and if the server never woke it stayed up for good
+   * behind a full-screen scrim.
+   */
+  profileLoaded: boolean
 
   /* World ---------------------------------------------------------------- */
   featuredEmotion: EmotionId
@@ -120,6 +129,15 @@ export interface ClientState {
   nearestPadDistance: number
   /** True when the player has asked to form a circle and is waiting. */
   waiting: boolean
+  /**
+   * The server's own `PlayerStat.ready` flag.
+   *
+   * `waiting` used to be derived purely from the published pad roster, which
+   * could not distinguish "the server refused me" from "the server accepted me
+   * but has not seated me yet" - both looked like nothing happened. Reading the
+   * server's acknowledgement directly makes the waiting state honest.
+   */
+  serverReady: boolean
 
   /* Circles -------------------------------------------------------------- */
   pads: PadView[]
@@ -180,6 +198,7 @@ export const state: ClientState = {
   unlockedMask: 0,
   rank: 0,
   newDayBanner: false,
+  profileLoaded: false,
 
   featuredEmotion: EmotionId.Calm,
   dayIndex: 0,
@@ -194,6 +213,7 @@ export const state: ClientState = {
   nearestPad: -1,
   nearestPadDistance: Number.MAX_VALUE,
   waiting: false,
+  serverReady: false,
 
   pads: [],
   myPad: null,

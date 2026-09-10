@@ -24,16 +24,34 @@ export const PAD_POSITIONS: ReadonlyArray<{ x: number; y: number; z: number }> =
   { x: 22.1, y: 0, z: 12.5 } // Pad C - south east
 ]
 
-/** Radius of a pad in metres. A player must be inside this to join a circle. */
-export const PAD_RADIUS = 3.6
+/**
+ * Radius of a pad in metres. A player must be inside this to join a circle.
+ *
+ * Kept deliberately tight so that standing on a pad already means "huddled with
+ * the others" - the pad geometry is what enforces physical closeness.
+ * `PAD_VISUAL_DIAMETER` below keeps the rendered ring in step with it.
+ */
+export const PAD_RADIUS = 3.0
+
+/** Diameter used for the pad mesh scale in the composite. */
+export const PAD_VISUAL_DIAMETER = PAD_RADIUS * 2
 
 /** Circle formation ------------------------------------------------------- */
 
 /**
  * Max distance (metres) between two players for them to count as "together".
- * Design spec calls for 3 units; we validate against this server-side.
+ *
+ * DERIVED FROM `PAD_RADIUS` ON PURPOSE. These used to be independent constants
+ * (3.6 and 3.0), which meant two players standing on opposite edges of the SAME
+ * pad passed the pad check and then failed the pairwise proximity check - the
+ * server accepted their request and then never seated them, with no message
+ * explaining why. Anchoring this to the pad diameter makes that contradiction
+ * impossible: anyone on the same pad is always within range.
+ *
+ * The check is kept rather than removed, because it still catches a player who
+ * walks out from under the anchor between the two evaluations.
  */
-export const CIRCLE_PROXIMITY = 3.0
+export const CIRCLE_PROXIMITY = PAD_RADIUS * 2
 
 /** Minimum players needed for a real (scoring) circle. */
 export const MIN_CIRCLE_PLAYERS = 2

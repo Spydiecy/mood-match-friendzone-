@@ -12,7 +12,15 @@
  */
 
 import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
-import { MINIGAME_DURATION_MS, MIN_CIRCLE_PLAYERS, POINTS_BASE } from '../../shared/config'
+import {
+  FEATURED_MULTIPLIER,
+  MINIGAME_DURATION_MS,
+  MIN_CIRCLE_PLAYERS,
+  POINTS_BASE,
+  POINTS_COMBO,
+  POINTS_MINIGAME,
+  STREAK_MAX_BONUS
+} from '../../shared/config'
 import { EMOTIONS } from '../../shared/emotions'
 import { state } from '../state'
 import { COLORS, FONT, SPACE, TOUCH } from './theme'
@@ -163,10 +171,13 @@ function StepScore() {
       <Text value="Score together" fontSize={FONT.title} color={COLORS.text} width={840} />
 
       <ScoreLine label="Form a circle" value={`+${POINTS_BASE}`} />
-      <ScoreLine label="Matching mood combo" value="+20" />
-      <ScoreLine label="Clear the mini-game" value="+30" />
-      <ScoreLine label="Holding the featured mood" value="x2" />
-      <ScoreLine label="Daily streak" value="up to +50%" />
+      <ScoreLine label="Matching mood combo" value={`+${POINTS_COMBO}`} />
+      <ScoreLine label="Clear the mini-game" value={`+${POINTS_MINIGAME}`} />
+      <ScoreLine label="Holding the featured mood" value={`x${FEATURED_MULTIPLIER}`} />
+      <ScoreLine
+        label="Daily streak"
+        value={`up to +${Math.round(STREAK_MAX_BONUS * 100)}%`}
+      />
 
       <Paragraph
         value="Scores are kept on a persistent leaderboard. One mood is featured every day, and five successful circles with the same mood unlocks its skin."

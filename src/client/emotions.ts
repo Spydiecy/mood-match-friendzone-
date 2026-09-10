@@ -41,14 +41,44 @@ export function rerollEmotion(): void {
   setEmotion(next)
 }
 
+/**
+ * Local time of the last mood change we sent.
+ *
+ * Used to hold off reconciliation briefly: the client applies a change
+ * optimistically for responsiveness, so for a moment the server legitimately
+ * still reports the old value and correcting it would fight the player's input.
+ */
+let lastChangeSentAt = 0
+
+/** How long to trust the local value over the server's after a change. */
+const RECONCILE_GRACE_MS = 2500
+
 /** Selects a specific emotion and tells the server. */
 export function setEmotion(emotion: EmotionId): void {
   const changed = state.emotion !== emotion
   state.emotion = emotion
+  lastChangeSentAt = Date.now()
   playSfx('reroll')
   // Only celebrate an actual change, so re-tapping your current mood is quiet.
   if (changed) emoteReroll()
   room.send('setEmotion', { emotion })
+}
+
+/**
+ * Corrects the local mood to whatever the server actually has.
+ *
+ * The server REFUSES a mood change while the player is in a circle, and used to
+ * drop the message silently while the client had already applied it - so the HUD
+ * showed Joy while the server scored Calm, which quietly changed the player's
+ * combo and whether they caught the 2x featured multiplier.
+ */
+export function reconcileEmotion(serverEmotion: number): void {
+  if (Date.now() - lastChangeSentAt < RECONCILE_GRACE_MS) return
+  if (serverEmotion < 0 || serverEmotion >= EMOTION_COUNT) return
+  if (state.emotion === serverEmotion) return
+
+  console.log('[CLIENT] mood corrected by server:', state.emotion, '->', serverEmotion)
+  state.emotion = serverEmotion as EmotionId
 }
 
 /** True when today's featured emotion matches the player's current emotion. */

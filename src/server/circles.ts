@@ -54,6 +54,8 @@ export interface CircleHooks {
   announceResolved: (circleId: number, success: boolean) => void
   /** Bumps the circles-completed counters in WorldState. */
   countCircle: () => void
+  /** Pushes a player record into its synced `PlayerStat` component. */
+  publishStat: (record: PlayerRecord) => void
 }
 
 /** Per-pad server-side runtime. Never synced directly. */
@@ -728,7 +730,17 @@ function resolvePad(pad: PadRuntime, now: number, success: boolean): void {
 function abortPad(pad: PadRuntime): void {
   for (let i = 0; i < pad.members.length; i++) {
     const record = findMember(pad, i)
-    if (record) record.activePad = -1
+    if (!record) continue
+    record.activePad = -1
+    hooks?.publishStat(record)
+    // Tell them why. Previously the panel just disappeared mid-countdown with no
+    // explanation, which reads as a bug rather than as somebody walking away.
+    hooks?.notify(
+      record.address,
+      RefusalCode.NeedMorePlayers,
+      'Someone stepped out of the ring. Tap Form Circle to try again.',
+      NoticeTone.Warning
+    )
   }
   resetPad(pad)
 }
@@ -763,6 +775,22 @@ function resetPad(pad: PadRuntime): void {
 
 /** Removes one member and compacts every parallel array and bitmask. */
 function dropMember(pad: PadRuntime, memberIndex: number): void {
+  // CRITICAL: release the per-player lock before losing the roster entry.
+  //
+  // `activePad` is what gates joining a circle, being selected for one, and
+  // changing mood. It is otherwise only cleared by `resolvePad` / `abortPad`,
+  // and both of those iterate the roster - so a player dropped here would keep
+  // the lock forever and be permanently unable to play again, silently. The
+  // player is still connected in the common case (they stepped off the pad
+  // during the countdown), which is exactly the case that used to leak.
+  const dropped = findMember(pad, memberIndex)
+  if (dropped) {
+    dropped.activePad = -1
+    dropped.ready = false
+    dropped.readyPad = -1
+    hooks?.publishStat(dropped)
+  }
+
   pad.members.splice(memberIndex, 1)
   pad.memberEmotions.splice(memberIndex, 1)
   pad.memberNames.splice(memberIndex, 1)
@@ -778,6 +806,20 @@ function dropMember(pad: PadRuntime, memberIndex: number): void {
 
   // Recount hits after compaction so progress stays honest.
   pad.hits = pad.beatHits.reduce((sum, mask) => sum + popCount(mask), 0)
+
+  // Dropping a member shrinks `fullMemberMask`, so a Color Match step that the
+  // remaining players had all already tapped may now be complete. The advance
+  // check normally only runs on a tap, so re-run it here or progress appears to
+  // freeze until someone taps again.
+  if (
+    pad.game === MiniGameKind.ColorMatch &&
+    pad.members.length > 0 &&
+    pad.step < pad.sequence.length &&
+    pad.stepMask === fullMemberMask(pad)
+  ) {
+    pad.step++
+    pad.stepMask = 0
+  }
 
   writeCore(pad)
 }

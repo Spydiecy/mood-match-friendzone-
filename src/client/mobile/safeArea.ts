@@ -49,19 +49,40 @@ const FALLBACK: LayoutMetrics = {
  */
 const MOBILE_ACTION_GUARD = 280
 
+/**
+ * Cached metrics, rebuilt only when the canvas size actually changes.
+ *
+ * `getLayout` is called from several components each frame, and every call used to
+ * allocate a fresh object. The canvas only changes on rotation or resize.
+ */
+let cached: LayoutMetrics | null = null
+let cachedWidth = -1
+let cachedHeight = -1
+
 /** Reads current layout metrics. Safe to call every frame. */
 export function getLayout(): LayoutMetrics {
   const canvas = UiCanvasInformation.getOrNull(engine.RootEntity)
   const touch = onMobile()
 
   if (!canvas) {
-    return { ...FALLBACK, touch, actionButtonGuard: touch ? MOBILE_ACTION_GUARD : 0 }
+    if (!cached || cachedWidth !== -1) {
+      cached = { ...FALLBACK, touch, actionButtonGuard: touch ? MOBILE_ACTION_GUARD : 0 }
+      cachedWidth = -1
+      cachedHeight = -1
+    }
+    return cached
   }
 
   const width = canvas.width
   const height = canvas.height
 
-  return {
+  if (cached && width === cachedWidth && height === cachedHeight) {
+    return cached
+  }
+
+  cachedWidth = width
+  cachedHeight = height
+  cached = {
     width,
     height,
     // Below this ratio the screen is short and wide (a phone held sideways) or
@@ -71,6 +92,8 @@ export function getLayout(): LayoutMetrics {
     actionButtonGuard: touch ? MOBILE_ACTION_GUARD : 0,
     bottomGuard: touch ? 24 : 48
   }
+
+  return cached
 }
 
 /**

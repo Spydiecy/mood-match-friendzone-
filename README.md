@@ -90,7 +90,8 @@ can be cleared by one strong player carrying a passive group.
 
 **Rhythm Tap** — a ring pulses once a second, everyone taps on the beat. The group
 needs 60% of the available taps across all members, so a player who has found the
-rhythm genuinely helps someone who hasn't.
+rhythm genuinely helps someone who hasn't. The ring and the button confirm your tap
+on the same frame you make it, with an "N in a row" streak.
 
 **Hold Zones** — everyone holds their own coloured zone. The timer **only advances
 while every zone is held at once**, and the panel shows exactly who has let go, so
@@ -98,7 +99,17 @@ it becomes a conversation instead of a guessing game.
 
 **Color Match** — a colour sequence shows for 2.6 seconds, then hides. A step only
 completes once **every** member has tapped that colour, and one wrong tap wipes the
-group's progress on the current step. Somebody has to say "green next" out loud.
+group's progress on the current step. Somebody has to say "green next" out loud. A
+row of chips shows exactly who has confirmed the current step, so you can always see
+whether your own tap landed and who the group is waiting on.
+
+### Your avatar plays too
+
+Circles are physical moments, not UI panels. Waiting on a pad makes you **wave**,
+which is legible from across the plaza and is the scene's strongest "come and join
+me" signal. When a circle locks in, every member **raises a hand** on the same
+frame. Clear the mini-game and everyone dances in their own mood's style; miss it
+and everyone **shrugs**, because losing together should read as a shared joke.
 
 ### Scoring
 
@@ -380,33 +391,72 @@ window.
 
 ## Honest status
 
-What has been verified:
+**Verified**
 
 - Production build and typecheck pass with zero errors.
-- The headless Multiplayer Server boots, initialises, publishes the daily
-  rotation, and ticks for minutes without errors or log noise.
-- Storage-miss path handled gracefully on a cold first run.
+- The headless Multiplayer Server boots, publishes the daily rotation, and ticks
+  for minutes without errors or log noise. Confirmed the rotation advancing across
+  a real UTC day boundary.
+- Storage-miss path degrades gracefully on a cold first run.
 - 51 assertions over the combo table, daily rotation, streak curve, skin bitmask
-  and score arithmetic pass, including that payouts are always integers and the
-  itemised breakdown reconciles to the total.
-- Payload measured at ~2.8 MB deployable, ~516 KB bundle.
+  and score arithmetic, including that payouts are always integers and the itemised
+  breakdown reconciles to the total.
+- Zero non-ASCII bytes anywhere in `src/` (byte scan, not a regex).
+- Every text node routes through a wrapper that always sets width AND height.
+- The only full-screen pointer blocker is the modal scrim, mounted only while an
+  overlay is up.
+- ~2.4 MB deployable, ~516 KB production bundle, 32 scene entities, 16 materials.
 
-What has **not** been verified, and should be before submitting:
+**Fixed after a full-codebase review** — these were real and several were severe:
 
-- **Play-testing with 2-4 real players.** The circle formation, mini-game judging
-  and payout paths have not been exercised end to end by real clients. This is the
-  most important remaining test.
+- A player dropped from a circle during the countdown kept their `activePad` lock
+  forever and could never form another circle, change mood, or be selected again,
+  with no error shown. The lock is now released in `dropMember`.
+- `PAD_RADIUS` (3.6) was wider than `CIRCLE_PROXIMITY` (3.0), so two players on
+  opposite edges of the *same* pad passed the pad check, failed the pairwise check,
+  and were never told. `CIRCLE_PROXIMITY` is now derived from `PAD_RADIUS`, making
+  the contradiction impossible, and the rendered ring matches the real radius.
+- Solo practice kept swallowing input after a real circle formed, so the player
+  looked like a member but contributed nothing and Hold Zones could never complete.
+  A real circle now always wins, and practice cannot start while waiting.
+- The particle burst used a same-frame `active` false/true toggle, which collapses
+  to no change, so each pad's burst fired once after boot and never again. Now
+  armed and fired across consecutive frames.
+- The formation cue read `state.pads` before the tick rebuilt it, so the
+  synchronised raise-hand was skipped for exactly the players it exists for.
+- `hello` was sent once per process, so a server restart left the player as mood
+  Calm with a shortened-address name while their HUD showed something else,
+  silently changing their combo and multiplier. Now re-sent when the server
+  returns.
+- `waiting` could not distinguish "refused" from "accepted but not yet seated";
+  it now reads the server's own acknowledgement.
+- Color Match had no local feedback at all, and `stepMask` (which says who has
+  confirmed) was synced into the client and then dropped without ever being drawn.
+- The tutorial flashed for returning players and could sit over the whole HUD
+  behind a full-screen scrim if the server never woke.
+- The leaderboard relied on a scroll container holding ~860px of rows in a 520px
+  box; scrolling is unreliable on the Unity mobile client, so the bottom four
+  places were potentially unreachable. Now two fixed columns, all ten visible.
+- Silent paths given feedback: an aborted countdown, a rate-limited Call, and a
+  successful Call (the caller is filtered from their own broadcast).
+- Ping self-filtering compared display names, which also suppressed the toast for
+  any other player sharing a name. Now compares addresses.
+- Per-frame churn removed: `refreshPadViews` was allocating ~18 arrays a frame in
+  an empty plaza; un-quantised pulses meant a full PBR material write every frame
+  from boot; `getLayout` allocated twice a frame.
+
+**Still not verified** — do these before submitting:
+
+- **Play-testing with 2-4 real players.** Circle formation, mini-game judging and
+  payout have not been exercised end to end by real clients. Most important
+  remaining test by a wide margin.
 - **A real mobile device.** The layout follows the documented safe-area and
-  touch-target rules and avoids the known Unity text and emoji traps, but it has
-  not been looked at on an actual phone. Text sizes and the bottom-centre action
-  placement should be checked on a small screen.
-- **Frame rate on a mid-range phone.** The scene is deliberately tiny (primitives
-  only, no textures), but this is unmeasured.
+  touch-target rules and avoids the known Unity text and emoji traps, but has not
+  been seen on an actual phone.
+- **Frame rate on a mid-range phone.** The scene is deliberately tiny and the
+  per-frame writes are now quantised, but this is unmeasured.
 - **A production cold start.** Local preview starts the server instantly, which is
-  exactly why cold-start bugs escape to production. The 15-second wake path needs
-  testing against a real deploy with nobody else in the World.
-
----
+  exactly why cold-start bugs escape to production.
 
 ## Buildathon checklist
 
