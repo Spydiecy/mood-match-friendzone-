@@ -52,7 +52,7 @@
     "voiceChat": "enabled"
   },
   "worldConfiguration": {
-    "name": "CHANGE-ME.dcl.eth"
+    "name": "mcrib.dcl.eth"
   },
   "authoritativeMultiplayer": true
 }

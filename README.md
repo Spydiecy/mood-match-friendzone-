@@ -16,9 +16,9 @@ leaderboard that only moves when people play together.
 
 | | |
 |---|---|
-| **World** | `CHANGE-ME.dcl.eth` — set this before deploying, see [Deploying](#deploying) |
-| **Jump link** | `https://decentraland.org/jump/?realm=CHANGE-ME.dcl.eth` |
-| **In-world** | `/goto CHANGE-ME.dcl.eth` |
+| **World** | [`mcrib.dcl.eth`](https://decentraland.org/jump/?realm=mcrib.dcl.eth) (shared Friendzone Buildathon World) |
+| **Jump link** | `https://decentraland.org/jump/?realm=mcrib.dcl.eth` |
+| **In-world** | `/goto mcrib.dcl.eth` |
 | **Scene size** | 2x2 parcels (32m x 32m) |
 | **Players** | 2-4 per circle, three circles can run at once |
 | **Session length** | ~20 seconds per circle, instant restart |
