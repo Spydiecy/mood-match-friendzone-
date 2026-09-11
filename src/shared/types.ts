@@ -22,8 +22,19 @@ export const EMOTION_COUNT = 6
 export enum MiniGameKind {
   RhythmTap = 0,
   HoldZones = 1,
-  ColorMatch = 2
+  ColorMatch = 2,
+  /**
+   * Everyone taps AT THE SAME TIME while a sweeping marker is in the target zone.
+   *
+   * The most purely cooperative of the four: an individual cannot make progress at
+   * all, because a sync only counts when every member's tap lands inside the same
+   * short window. It forces people to count down out loud.
+   */
+  SyncTap = 3
 }
+
+/** How many mini-games exist, for the server's random pick. */
+export const MINIGAME_COUNT = 4
 
 /** Lifecycle of a Mood Circle. */
 export enum CirclePhase {

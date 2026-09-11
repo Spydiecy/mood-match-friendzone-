@@ -29,6 +29,7 @@ import {
   FEATURED_MULTIPLIER,
   MAX_CIRCLE_PLAYERS,
   MIN_CIRCLE_PLAYERS,
+  PAD_POSITIONS,
   PAD_TIERS,
   POINTS_BASE,
   POINTS_COMBO,
@@ -252,7 +253,7 @@ check('size bonus never negative for one', groupSizeBonus(1), 0)
 // Every pad must be playable: no tier may exceed the circle cap, and at least one
 // pad must be reachable by the smallest possible group, or two friends could never
 // play at all.
-check('there are three pad tiers', PAD_TIERS.length, 3)
+check('there are five pads', PAD_TIERS.length, 5)
 for (let pad = 0; pad < PAD_TIERS.length; pad++) {
   const required = requiredForPad(pad)
   checkTrue(
@@ -264,15 +265,29 @@ checkTrue(
   'at least one pad is playable by the minimum group',
   PAD_TIERS.some((tier) => tier.required === MIN_CIRCLE_PLAYERS)
 )
-check(
-  'tiers are all distinct',
-  new Set(PAD_TIERS.map((t) => t.required)).size,
-  PAD_TIERS.length
+// Duplicate tiers are intentional now (two Duos, two Trios) - what matters is that
+// every group size from the minimum to the cap has a ring, so no group is ever
+// left with nowhere to play.
+for (let size = MIN_CIRCLE_PLAYERS; size <= MAX_CIRCLE_PLAYERS; size++) {
+  checkTrue(
+    `a ring exists for a group of ${size}`,
+    PAD_TIERS.some((tier) => tier.required === size)
+  )
+}
+// The most common group size is two, so there should be more than one Duo ring.
+checkTrue(
+  'more than one ring accepts the smallest group',
+  PAD_TIERS.filter((t) => t.required === MIN_CIRCLE_PLAYERS).length >= 2
 )
 checkTrue(
   'every tier has a name and a location',
   PAD_TIERS.every((t) => t.tier.length > 0 && t.where.length > 0)
 )
+// Every pad needs its own sync id, and the enum only reserves five slots.
+checkTrue('no more pads than reserved sync ids', PAD_TIERS.length <= 5)
+// Positions and tiers must stay the same length or requiredForPad() silently
+// falls back to the minimum for the extra pads.
+check('a position for every tier', PAD_POSITIONS.length, PAD_TIERS.length)
 
 // The breakdown must itemise to the same figure the player is paid, or the result
 // panel would be lying.

@@ -34,10 +34,12 @@ import { state } from './state'
 import { emotionColor } from './ui/theme'
 
 /** Composite entity names. Kept in one place so a rename is a one-line change. */
+const PAD_LABELS = ['A', 'B', 'C', 'D', 'E']
+
 const NAMES = {
-  pads: ['MoodPad_A', 'MoodPad_B', 'MoodPad_C'],
-  beacons: ['PadBeacon_A', 'PadBeacon_B', 'PadBeacon_C'],
-  padLabels: ['PadLabel_A', 'PadLabel_B', 'PadLabel_C'],
+  pads: PAD_LABELS.map((l) => `MoodPad_${l}`),
+  beacons: PAD_LABELS.map((l) => `PadBeacon_${l}`),
+  padLabels: PAD_LABELS.map((l) => `PadLabel_${l}`),
   fontCrystal: 'MoodFontCrystal',
   featuredSign: 'FeaturedSign',
   boardSign: 'LeaderboardSign'
@@ -137,8 +139,8 @@ function createEmitter(position: { x: number; y: number; z: number }): Entity {
  * and then never again. So the request is queued here, armed (set false) on the
  * next visual tick, and fired (set true) on the one after.
  */
-const pendingBursts: (number | null)[] = [null, null, null]
-const burstStage: number[] = [0, 0, 0]
+const pendingBursts: (number | null)[] = PAD_POSITIONS.map(() => null)
+const burstStage: number[] = PAD_POSITIONS.map(() => 0)
 
 /**
  * Requests a one-shot burst in an emotion's colour.
@@ -217,7 +219,7 @@ export function updateVisuals(now: number): void {
 }
 
 /** Last label text written per pad, so an unchanged label is not rewritten. */
-const lastLabelText: string[] = ['', '', '']
+const lastLabelText: string[] = PAD_POSITIONS.map(() => '')
 
 /** Throttle for the pad labels. */
 let nextLabelUpdate = 0

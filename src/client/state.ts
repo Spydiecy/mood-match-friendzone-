@@ -13,7 +13,7 @@ import { EmotionId, MiniGameKind } from '../shared/types'
 import { CirclePhase } from '../shared/types'
 
 /** Which full-screen panel is showing. */
-export type Screen = 'hud' | 'tutorial' | 'leaderboard' | 'info'
+export type Screen = 'hud' | 'tutorial' | 'leaderboard' | 'info' | 'practicePick'
 
 /** A transient toast. */
 export interface Notice {
@@ -185,6 +185,8 @@ export interface PracticeState {
   holding: boolean
   allHoldMs: number
   step: number
+  /** Sync Tap: completed syncs. */
+  syncs: number
   sequence: EmotionId[]
   finished: boolean
   success: boolean

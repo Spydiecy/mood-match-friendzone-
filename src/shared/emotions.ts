@@ -29,8 +29,14 @@ export interface EmotionDefinition {
   color: { r: number; g: number; b: number }
   /** A darker shade for panel backgrounds. */
   shade: { r: number; g: number; b: number }
-  /** Short ASCII mark. Safe on every explorer. */
+  /**
+   * Short ASCII mark. Retained as a fallback for anywhere a texture cannot be
+   * used (in-world TextShape, for instance), but the UI uses `icon` instead -
+   * the ASCII marks read as punctuation rather than artwork.
+   */
   glyph: string
+  /** Path to the mood's icon PNG, white-on-transparent so it can be tinted. */
+  icon: string
   /** Hint for the procedural UI icon. */
   shape: EmotionShape
 }
@@ -43,6 +49,7 @@ export const EMOTIONS: ReadonlyArray<EmotionDefinition> = [
   {
     id: EmotionId.Calm,
     name: 'Calm',
+    icon: 'images/icons/mood-calm.png',
     tagline: 'Slow breath, steady hands.',
     color: { r: 0.29, g: 0.62, b: 1.0 },
     shade: { r: 0.07, g: 0.16, b: 0.3 },
@@ -52,6 +59,7 @@ export const EMOTIONS: ReadonlyArray<EmotionDefinition> = [
   {
     id: EmotionId.Joy,
     name: 'Joy',
+    icon: 'images/icons/mood-joy.png',
     tagline: 'Loud, bright, contagious.',
     color: { r: 1.0, g: 0.83, b: 0.24 },
     shade: { r: 0.31, g: 0.24, b: 0.04 },
@@ -61,6 +69,7 @@ export const EMOTIONS: ReadonlyArray<EmotionDefinition> = [
   {
     id: EmotionId.Focus,
     name: 'Focus',
+    icon: 'images/icons/mood-focus.png',
     tagline: 'One target, nothing else.',
     color: { r: 0.66, g: 0.42, b: 1.0 },
     shade: { r: 0.18, g: 0.1, b: 0.3 },
@@ -70,6 +79,7 @@ export const EMOTIONS: ReadonlyArray<EmotionDefinition> = [
   {
     id: EmotionId.Energy,
     name: 'Energy',
+    icon: 'images/icons/mood-energy.png',
     tagline: 'Go now, think later.',
     color: { r: 1.0, g: 0.35, b: 0.33 },
     shade: { r: 0.31, g: 0.08, b: 0.08 },
@@ -79,6 +89,7 @@ export const EMOTIONS: ReadonlyArray<EmotionDefinition> = [
   {
     id: EmotionId.Love,
     name: 'Love',
+    icon: 'images/icons/mood-love.png',
     tagline: 'Warm, open, generous.',
     color: { r: 1.0, g: 0.45, b: 0.76 },
     shade: { r: 0.31, g: 0.1, b: 0.22 },
@@ -88,6 +99,7 @@ export const EMOTIONS: ReadonlyArray<EmotionDefinition> = [
   {
     id: EmotionId.Curiosity,
     name: 'Curiosity',
+    icon: 'images/icons/mood-curiosity.png',
     tagline: 'What happens if we try?',
     color: { r: 0.35, g: 0.87, b: 0.55 },
     shade: { r: 0.07, g: 0.26, b: 0.14 },

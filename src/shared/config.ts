@@ -19,9 +19,11 @@ export const PLAZA_CENTER = { x: 16, y: 0, z: 16 }
  * The server uses these to decide which pad a player is standing on.
  */
 export const PAD_POSITIONS: ReadonlyArray<{ x: number; y: number; z: number }> = [
-  { x: 16, y: 0, z: 23 }, // Pad A - north
-  { x: 9.9, y: 0, z: 12.5 }, // Pad B - south west
-  { x: 22.1, y: 0, z: 12.5 } // Pad C - south east
+  { x: 16.0, y: 0, z: 25.0 }, // A - Squad, north
+  { x: 24.56, y: 0, z: 18.78 }, // B - Trio, east
+  { x: 21.29, y: 0, z: 8.72 }, // C - Duo, south east
+  { x: 10.71, y: 0, z: 8.72 }, // D - Duo, south west
+  { x: 7.44, y: 0, z: 18.78 } // E - Trio, west
 ]
 
 /**
@@ -33,8 +35,10 @@ export const PAD_POSITIONS: ReadonlyArray<{ x: number; y: number; z: number }> =
  * you step on it, gives bigger groups something to aim for, and guarantees a pair
  * can always play via the Duo pad however quiet the plaza is.
  *
- * The Duo pad is the closest to the spawn point on purpose: it is the one that
- * always works, so it should be the first one a new arrival walks into.
+ * Five rings so there is always one that fits the group you actually have: TWO
+ * Duos (much the most likely group size), two Trios and one Squad. Both Duos sit
+ * nearest the spawn point on purpose - they are the rings that always work, so
+ * they should be the first ones a new arrival walks into.
  *
  * Order matches PAD_POSITIONS.
  */
@@ -47,8 +51,10 @@ export const PAD_TIERS: ReadonlyArray<{
   where: string
 }> = [
   { required: 4, tier: 'Squad', where: 'North' },
-  { required: 2, tier: 'Duo', where: 'West' },
-  { required: 3, tier: 'Trio', where: 'East' }
+  { required: 3, tier: 'Trio', where: 'East' },
+  { required: 2, tier: 'Duo', where: 'SouthEast' },
+  { required: 2, tier: 'Duo', where: 'SouthWest' },
+  { required: 3, tier: 'Trio', where: 'West' }
 ]
 
 /** Players needed on a given pad. */
@@ -149,6 +155,25 @@ export const HOLD_EXPIRY_MS = 900
 
 /** Color Match: how many steps in the sequence. */
 export const COLOR_SEQUENCE_LENGTH = 4
+
+/** Sync Tap: how long the marker takes to sweep across and back, in ms. */
+export const SYNC_SWEEP_MS = 2000
+
+/**
+ * Sync Tap: half-width of the target zone, as a fraction of the bar.
+ * 0.16 means the middle ~32% of the sweep counts.
+ */
+export const SYNC_ZONE_HALF_WIDTH = 0.16
+
+/**
+ * Sync Tap: how close together every member's tap must land to count as one sync.
+ * Generous enough to be achievable over real network latency, tight enough that it
+ * cannot be hit by accident.
+ */
+export const SYNC_WINDOW_MS = 700
+
+/** Sync Tap: successful group syncs needed to clear the round. */
+export const SYNC_TARGET = 3
 
 /** Scoring --------------------------------------------------------------- */
 

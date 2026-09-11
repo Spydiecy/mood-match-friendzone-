@@ -85,7 +85,8 @@ export function roundFromPractice(
     startsAt: practice.startsAt,
     endsAt: practice.endsAt,
     progress: practice.progress,
-    hits: practice.hits,
+    // Sync Tap reports its counter through `hits`, matching the server.
+    hits: practice.game === MiniGameKind.SyncTap ? practice.syncs : practice.hits,
     holdMask: practice.holding ? 1 : 0,
     step: practice.step,
     // Solo: the local optimistic mark in `colorFeel` supplies the confirmation.

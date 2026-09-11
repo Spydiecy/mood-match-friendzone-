@@ -26,21 +26,21 @@
       "default": true,
       "position": {
         "x": [
-          13,
-          19
+          14,
+          18
         ],
         "y": [
           0,
           0
         ],
         "z": [
-          5,
-          7
+          2.5,
+          4
         ]
       },
       "cameraTarget": {
         "x": 16,
-        "y": 1.8,
+        "y": 2,
         "z": 16
       }
     }
@@ -55,5 +55,6 @@
   "worldConfiguration": {
     "name": "mcrib.dcl.eth"
   },
-  "authoritativeMultiplayer": true
+  "authoritativeMultiplayer": true,
+  "landscapeTerrain": false
 }

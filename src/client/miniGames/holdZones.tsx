@@ -14,7 +14,7 @@ import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
 import { HOLD_REQUIRED_MS } from '../../shared/config'
 import { getEmotion } from '../../shared/emotions'
 import { COLORS, FONT, RADIUS, SPACE, TOUCH, emotionColor, emotionShade } from '../ui/theme'
-import { ProgressBar, Row, Text } from '../ui/widgets'
+import { Icon, ProgressBar, Row, Text } from '../ui/widgets'
 import { RoundView, countdownSeconds, inCountdown, secondsLeft } from './round'
 import { inputHoldEnd, inputHoldStart, isHolding } from './input'
 
@@ -75,9 +75,9 @@ export function HoldZonesPanel(props: { round: RoundView }) {
                 color: lit ? emotionColor(emotion) : emotionShade(emotion, 0.9)
               }}
             >
-              <Text
-                value={getEmotion(emotion).glyph}
-                fontSize={FONT.heading}
+              <Icon
+                src={getEmotion(emotion).icon}
+                size={30}
                 color={lit ? COLORS.panel : emotionColor(emotion)}
               />
               <Text

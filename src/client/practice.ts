@@ -22,10 +22,12 @@ import {
   RESULT_MS,
   RHYTHM_BEAT_MS,
   RHYTHM_SUCCESS_RATIO,
-  RHYTHM_TOLERANCE_MS
+  RHYTHM_TOLERANCE_MS,
+  SYNC_TARGET
 } from '../shared/config'
 import { NoticeTone } from '../shared/messages'
-import { EMOTION_COUNT, EmotionId, MiniGameKind } from '../shared/types'
+import { EMOTION_COUNT, EmotionId, MINIGAME_COUNT, MiniGameKind } from '../shared/types'
+import { markerInZone } from '../shared/syncTap'
 import { playSfx } from './audio'
 import { PracticeState, showNotice, state } from './state'
 
@@ -84,7 +86,7 @@ export function startPractice(game?: MiniGameKind): void {
     return
   }
 
-  const chosen = game ?? (Math.floor(Math.random() * 3) as MiniGameKind)
+  const chosen = game ?? (Math.floor(Math.random() * MINIGAME_COUNT) as MiniGameKind)
   const now = Date.now()
   const startsAt = now + PRACTICE_COUNTDOWN_MS
 
@@ -104,6 +106,7 @@ export function startPractice(game?: MiniGameKind): void {
     holding: false,
     allHoldMs: 0,
     step: 0,
+    syncs: 0,
     sequence: buildPracticeSequence(),
     finished: false,
     success: false
@@ -143,6 +146,19 @@ export function practiceTap(): void {
 
   const now = Date.now()
   if (now < practice.startsAt) return
+
+  if (practice.game === MiniGameKind.SyncTap) {
+    // Solo, so "everyone tapped together" reduces to one in-zone tap. The real
+    // game needs the whole group inside the same window.
+    if (markerInZone(practice.startsAt, now)) {
+      practice.syncs++
+      playSfx('tap')
+    } else {
+      practice.syncs = Math.max(0, practice.syncs - 1)
+      playSfx('fail')
+    }
+    return
+  }
 
   const total = beatCount()
   let beat = Math.round((now - practice.startsAt) / RHYTHM_BEAT_MS)
@@ -226,6 +242,8 @@ function computeProgress(practice: PracticeState): number {
       return practice.sequence.length === 0
         ? 0
         : Math.min(1, practice.step / practice.sequence.length)
+    case MiniGameKind.SyncTap:
+      return Math.min(1, practice.syncs / SYNC_TARGET)
     default:
       return 0
   }
@@ -239,6 +257,8 @@ function objectiveMet(practice: PracticeState): boolean {
       return practice.allHoldMs >= HOLD_REQUIRED_MS
     case MiniGameKind.ColorMatch:
       return practice.step >= practice.sequence.length
+    case MiniGameKind.SyncTap:
+      return practice.syncs >= SYNC_TARGET
     default:
       return false
   }

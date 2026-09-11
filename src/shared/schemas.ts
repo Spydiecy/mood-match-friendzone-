@@ -36,7 +36,9 @@ export enum SyncId {
    */
   PadCircle0 = 10,
   PadCircle1 = 11,
-  PadCircle2 = 12
+  PadCircle2 = 12,
+  PadCircle3 = 13,
+  PadCircle4 = 14
 }
 
 /** Sync id for a given pad index. */

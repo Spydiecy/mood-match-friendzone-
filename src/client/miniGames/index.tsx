@@ -7,10 +7,17 @@
  */
 
 import ReactEcs from '@dcl/sdk/react-ecs'
-import { MiniGameKind } from '../../shared/types'
+import { MINIGAME_COUNT, MiniGameKind } from '../../shared/types'
+
+/** Every mini-game, for the practice picker. */
+export const ALL_MINI_GAMES: MiniGameKind[] = Array.from(
+  { length: MINIGAME_COUNT },
+  (_unused, index) => index as MiniGameKind
+)
 import { COLOR_MATCH_BRIEF, ColorMatchAction, ColorMatchPanel } from './colorMatch'
 import { HOLD_ZONES_BRIEF, HoldZonesAction, HoldZonesPanel } from './holdZones'
 import { RHYTHM_TAP_BRIEF, RhythmTapAction, RhythmTapPanel } from './rhythmTap'
+import { SYNC_TAP_BRIEF, SyncTapAction, SyncTapPanel } from './syncTap'
 import { RoundView } from './round'
 
 /** Player-facing name of a mini-game. ASCII only. */
@@ -22,6 +29,8 @@ export function miniGameName(game: MiniGameKind): string {
       return 'Hold Zones'
     case MiniGameKind.ColorMatch:
       return 'Color Match'
+    case MiniGameKind.SyncTap:
+      return 'Sync Tap'
     default:
       return 'Mini Game'
   }
@@ -36,6 +45,8 @@ export function miniGameBrief(game: MiniGameKind): string {
       return HOLD_ZONES_BRIEF
     case MiniGameKind.ColorMatch:
       return COLOR_MATCH_BRIEF
+    case MiniGameKind.SyncTap:
+      return SYNC_TAP_BRIEF
     default:
       return ''
   }
@@ -48,6 +59,8 @@ export function MiniGamePanel(props: { round: RoundView }) {
       return <HoldZonesPanel round={props.round} />
     case MiniGameKind.ColorMatch:
       return <ColorMatchPanel round={props.round} />
+    case MiniGameKind.SyncTap:
+      return <SyncTapPanel round={props.round} />
     case MiniGameKind.RhythmTap:
     default:
       return <RhythmTapPanel round={props.round} />
@@ -61,6 +74,8 @@ export function MiniGameAction(props: { round: RoundView }) {
       return <HoldZonesAction round={props.round} />
     case MiniGameKind.ColorMatch:
       return <ColorMatchAction round={props.round} />
+    case MiniGameKind.SyncTap:
+      return <SyncTapAction round={props.round} />
     case MiniGameKind.RhythmTap:
     default:
       return <RhythmTapAction round={props.round} />

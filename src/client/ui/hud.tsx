@@ -31,9 +31,10 @@ import {
   pingPlaza,
   waitingElsewhere
 } from '../circle'
-import { MiniGameAction, MiniGamePanel, miniGameBrief, miniGameName } from '../miniGames'
+import { ALL_MINI_GAMES, MiniGameAction, MiniGamePanel, miniGameName } from '../miniGames'
 import { roundFromPad, roundFromPractice } from '../miniGames/round'
 import { practiceBest, startPractice, stopPractice } from '../practice'
+import { ComboPreview, StartingCard } from './startingCard'
 import { state } from '../state'
 import {
   BUDGET,
@@ -252,12 +253,75 @@ function currentGuidance(): { headline: string; detail: string; urgent: boolean 
 export function CenterStage() {
   const pad = state.myPad
 
-  if (pad && pad.phase !== CirclePhase.Result) return <ActiveRound />
+  // A locked-in circle gets the loud countdown card before the game itself.
+  if (pad && pad.phase === CirclePhase.Countdown) return <StartingCard />
+  if (pad && pad.phase === CirclePhase.Playing) return <ActiveRound />
   if (pad && pad.phase === CirclePhase.Result) return <RoundResult />
   if (state.practice) return <PracticeRound />
   if (state.payout) return <PayoutPanel />
+  if (state.screen === 'practicePick') return <PracticePicker />
 
-  return <UiEntity uiTransform={{ width: 1, height: 1 }} />
+  // Standing on a filling pad: show what the group's moods would score. This is
+  // where moods stop being an invisible stat.
+  return <ComboPreview />
+}
+
+/**
+ * Lets the player pick which mini-game to practise.
+ *
+ * A random game was frustrating for practice specifically: the whole reason to open
+ * it is to rehearse the one you keep losing.
+ */
+function PracticePicker() {
+  return (
+    <Panel width={720} padding={SPACE.md} textured>
+      <Text value="Practise which game?" fontSize={FONT.heading} color={COLORS.text} width={640} />
+      <Text
+        value="Unscored - real circles need other players"
+        fontSize={FONT.tiny}
+        color={COLORS.textDim}
+        width={640}
+      />
+      <Row width="100%" justifyContent="center" marginTop={SPACE.sm}>
+        {ALL_MINI_GAMES.map((game) => (
+          <UiEntity
+            key={`pick-game-${game}`}
+            uiTransform={{
+              width: 158,
+              height: 84,
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: RADIUS.chip,
+              margin: { left: SPACE.xs, right: SPACE.xs },
+              pointerFilter: 'block'
+            }}
+            uiBackground={{ color: COLORS.chip }}
+            onMouseDown={() => {
+              state.screen = 'hud'
+              startPractice(game)
+            }}
+          >
+            <Text value={miniGameName(game)} fontSize={FONT.small} color={COLORS.text} />
+            <Text
+              value={`best ${Math.round(practiceBest(game) * 100)}%`}
+              fontSize={FONT.tiny}
+              color={COLORS.textDim}
+            />
+          </UiEntity>
+        ))}
+      </Row>
+      <Row width="100%" justifyContent="center" marginTop={SPACE.sm}>
+        <IconButton
+          icon={ICON.close}
+          caption="Cancel"
+          onClick={() => {
+            state.screen = 'hud'
+          }}
+        />
+      </Row>
+    </Panel>
+  )
 }
 
 /** A live, server-judged round. */
@@ -266,7 +330,6 @@ function ActiveRound() {
   if (!pad) return <UiEntity uiTransform={{ width: 1, height: 1 }} />
 
   const round = roundFromPad(pad)
-  const counting = pad.phase === CirclePhase.Countdown
 
   return (
     <Panel width={780} maxHeight={BUDGET.centreMax} padding={SPACE.md} textured>
@@ -289,19 +352,6 @@ function ActiveRound() {
         color={pad.comboBonus > 0 ? COLORS.good : COLORS.textDim}
         width={620}
       />
-
-      {counting ? (
-        <Text
-          value={miniGameBrief(pad.game)}
-          fontSize={FONT.small}
-          color={COLORS.textDim}
-          width={720}
-          wrap
-          lines={2}
-        />
-      ) : (
-        false
-      )}
 
       <MiniGamePanel round={round} />
     </Panel>
@@ -530,7 +580,10 @@ export function ActionRow() {
         <IconButton
           icon={ICON.practice}
           caption="Practice"
-          onClick={() => startPractice()}
+          onClick={() => {
+            state.screen = state.screen === 'practicePick' ? 'hud' : 'practicePick'
+          }}
+          active={state.screen === 'practicePick'}
         />
         <IconButton
           icon={ICON.info}

@@ -31,13 +31,23 @@ import {
   RESULT_MS,
   RHYTHM_BEAT_MS,
   RHYTHM_SUCCESS_RATIO,
-  RHYTHM_TOLERANCE_MS
+  RHYTHM_TOLERANCE_MS,
+  SYNC_TARGET,
+  SYNC_WINDOW_MS
 } from '../shared/config'
 import { requiredForPad } from '../shared/config'
+import { markerInZone } from '../shared/syncTap'
 import { evaluateCombo } from '../shared/emotions'
 import { NoticeTone, RefusalCode } from '../shared/messages'
 import { CircleCore, CircleProgress, padCircleSyncId } from '../shared/schemas'
-import { CirclePhase, EMOTION_COUNT, EmotionId, GameInputKind, MiniGameKind } from '../shared/types'
+import {
+  CirclePhase,
+  EMOTION_COUNT,
+  EmotionId,
+  GameInputKind,
+  MINIGAME_COUNT,
+  MiniGameKind
+} from '../shared/types'
 import { PlayerRecord, allPlayers, getPlayerPosition } from './state'
 
 /** Callbacks the owner (server/index.ts) supplies so this module stays decoupled. */
@@ -93,6 +103,12 @@ interface PadRuntime {
   holdSeenAt: number[]
   /** Accumulated ms during which EVERY member was holding. */
   allHoldMs: number
+
+  /* Sync Tap ------------------------------------------------------------- */
+  /** Last tap time per member index, for the simultaneity check. */
+  syncTapAt: number[]
+  /** Completed group syncs. */
+  syncs: number
 
   /* Color Match --------------------------------------------------------- */
   step: number
@@ -183,6 +199,8 @@ export function initCircles(
       holdMask: 0,
       holdSeenAt: [],
       allHoldMs: 0,
+      syncTapAt: [],
+      syncs: 0,
       step: 0,
       stepMask: 0,
       comboId: '',
@@ -268,6 +286,7 @@ export function handleGameInput(
   switch (kind) {
     case GameInputKind.Tap:
       if (pad.game === MiniGameKind.RhythmTap) judgeRhythmTap(pad, memberIndex, now)
+      else if (pad.game === MiniGameKind.SyncTap) judgeSyncTap(pad, memberIndex, now)
       break
 
     case GameInputKind.HoldStart:
@@ -364,6 +383,38 @@ function judgeColorTap(pad: PadRuntime, memberIndex: number, tapped: number): vo
   }
 }
 
+/**
+ * Judges a Sync Tap input.
+ *
+ * A tap only counts if the marker is in the zone, and a SYNC only completes when
+ * every member has a qualifying tap inside the same `SYNC_WINDOW_MS`. Nothing an
+ * individual does moves the bar on its own, which is the point: the group has to
+ * count down together.
+ *
+ * Timing comes from the server's own clock and the shared `markerInZone`, so a
+ * client cannot claim a tap landed in the zone when it did not.
+ */
+function judgeSyncTap(pad: PadRuntime, memberIndex: number, now: number): void {
+  if (!markerInZone(pad.startsAt, now)) {
+    // A tap outside the zone costs the group its partial sync, so mashing through
+    // the sweep actively hurts rather than being free.
+    pad.syncTapAt = new Array<number>(pad.members.length).fill(0)
+    return
+  }
+
+  pad.syncTapAt[memberIndex] = now
+
+  const everyoneTapped = pad.members.every((_, index) => {
+    const at = pad.syncTapAt[index] ?? 0
+    return at > 0 && now - at <= SYNC_WINDOW_MS
+  })
+
+  if (everyoneTapped) {
+    pad.syncs++
+    pad.syncTapAt = new Array<number>(pad.members.length).fill(0)
+  }
+}
+
 /** Bitmask with one bit set per member. */
 function fullMemberMask(pad: PadRuntime): number {
   return (1 << pad.members.length) - 1
@@ -396,6 +447,8 @@ function computeProgress(pad: PadRuntime): number {
       return Math.min(1, pad.allHoldMs / HOLD_REQUIRED_MS)
     case MiniGameKind.ColorMatch:
       return pad.sequence.length === 0 ? 0 : Math.min(1, pad.step / pad.sequence.length)
+    case MiniGameKind.SyncTap:
+      return Math.min(1, pad.syncs / SYNC_TARGET)
     default:
       return 0
   }
@@ -412,6 +465,8 @@ function objectiveMet(pad: PadRuntime): boolean {
       return pad.allHoldMs >= HOLD_REQUIRED_MS
     case MiniGameKind.ColorMatch:
       return pad.step >= pad.sequence.length
+    case MiniGameKind.SyncTap:
+      return pad.syncs >= SYNC_TARGET
     default:
       return false
   }
@@ -565,7 +620,7 @@ function startCountdown(pad: PadRuntime, members: PlayerRecord[], now: number): 
   pad.members = members.map((r) => r.address)
   pad.memberEmotions = members.map((r) => r.emotion)
   pad.memberNames = members.map((r) => r.displayName)
-  pad.game = Math.floor(Math.random() * 3) as MiniGameKind
+  pad.game = Math.floor(Math.random() * MINIGAME_COUNT) as MiniGameKind
   pad.startsAt = now + COUNTDOWN_MS
   pad.endsAt = pad.startsAt + MINIGAME_DURATION_MS
 
@@ -583,6 +638,8 @@ function startCountdown(pad: PadRuntime, members: PlayerRecord[], now: number): 
   pad.holdMask = 0
   pad.holdSeenAt = new Array<number>(pad.members.length).fill(0)
   pad.allHoldMs = 0
+  pad.syncTapAt = new Array<number>(pad.members.length).fill(0)
+  pad.syncs = 0
   pad.step = 0
   pad.stepMask = 0
   pad.success = false
@@ -746,6 +803,8 @@ function resetPad(pad: PadRuntime): void {
   pad.holdMask = 0
   pad.holdSeenAt = []
   pad.allHoldMs = 0
+  pad.syncTapAt = []
+  pad.syncs = 0
   pad.step = 0
   pad.stepMask = 0
   pad.comboId = ''
@@ -785,6 +844,7 @@ function dropMember(pad: PadRuntime, memberIndex: number): void {
   pad.holdMask = compactMask(pad.holdMask, memberIndex)
   pad.stepMask = compactMask(pad.stepMask, memberIndex)
   pad.holdSeenAt.splice(memberIndex, 1)
+  pad.syncTapAt.splice(memberIndex, 1)
   for (let i = 0; i < pad.beatHits.length; i++) {
     pad.beatHits[i] = compactMask(pad.beatHits[i], memberIndex)
   }
@@ -871,7 +931,9 @@ function writeProgress(pad: PadRuntime, now: number, force: boolean): void {
 
   progress.circleId = pad.circleId
   progress.progress = computeProgress(pad)
-  progress.hits = pad.hits
+  // `hits` doubles as the Sync Tap counter: both are "successful actions so far",
+  // and reusing the field avoids widening the component for one game.
+  progress.hits = pad.game === MiniGameKind.SyncTap ? pad.syncs : pad.hits
   progress.beatIndex = pad.startsAt
     ? Math.max(0, Math.floor((now - pad.startsAt) / RHYTHM_BEAT_MS))
     : 0

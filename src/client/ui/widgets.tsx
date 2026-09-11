@@ -497,9 +497,9 @@ export function EmotionBadge(props: {
         }}
         uiBackground={{ color: emotionShade(props.emotion, alpha) }}
       >
-        <Text
-          value={emotion.glyph}
-          fontSize={Math.round(size * 0.4)}
+        <Icon
+          src={emotion.icon}
+          size={Math.round(size * 0.58)}
           color={emotionColor(props.emotion, alpha)}
         />
       </UiEntity>
@@ -543,9 +543,9 @@ export function ColorTarget(props: {
       uiBackground={{ color: emotionColor(props.emotion) }}
       onMouseDown={props.onClick}
     >
-      <Text
-        value={emotion.glyph}
-        fontSize={Math.round(size * 0.32)}
+      <Icon
+        src={emotion.icon}
+        size={Math.round(size * 0.46)}
         color={textOn(props.emotion)}
       />
     </UiEntity>
