@@ -17,6 +17,7 @@ import { COLORS, FONT, GLOW, RADIUS, SPACE, TOUCH, emotionColor } from '../ui/th
 import { ProgressBar, Row, Text } from '../ui/widgets'
 import { RoundView, countdownSeconds, inCountdown, secondsLeft } from './round'
 import { inputTap } from './input'
+import { Standings } from './standings'
 import { BeatMark, beatHistory, currentVerdict, flashIntensity, tapStreak } from './tapFeel'
 
 /** Beats in a full round. */
@@ -150,6 +151,8 @@ export function RhythmTapPanel(props: { round: RoundView }) {
           />
         ))}
       </Row>
+
+      <Standings round={round} />
 
       <UiEntity uiTransform={{ width: 470, height: 14, margin: { top: SPACE.xs } }}>
         <ProgressBar value={round.progress} fill={ringColor} height={14} />

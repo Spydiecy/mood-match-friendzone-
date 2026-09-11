@@ -31,6 +31,12 @@ export interface PayoutView {
   miniGame: number
   /** Bonus for circle size. */
   groupSize: number
+  /** Bonus for finishing position. */
+  placement: number
+  /** Zero-based finishing position. */
+  finishRank: number
+  /** How many players were in the circle. */
+  memberCount: number
   featuredMultiplier: number
   streakBonus: number
   total: number
@@ -67,6 +73,10 @@ export interface PadView {
   resolved: boolean
   success: boolean
   points: number[]
+  /** Live per-member mini-game performance, parallel to `members`. */
+  memberScore: number[]
+  /** Reaction: server clock of a cue that has already fired, or 0. */
+  cueAt: number
   /** True when the local player is a member. */
   mine: boolean
   /** The local player's index inside `members`, or -1. */
@@ -187,6 +197,12 @@ export interface PracticeState {
   step: number
   /** Sync Tap: completed syncs. */
   syncs: number
+  /** Local performance score, mirroring the server's per-member score. */
+  memberScore: number
+  /** Reaction: local clock of a live cue, or 0. */
+  cueAt: number
+  /** Reaction: cues completed. */
+  cuesDone: number
   sequence: EmotionId[]
   finished: boolean
   success: boolean

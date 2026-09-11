@@ -22,6 +22,7 @@ import {
   computeScore,
   groupSizeBonus,
   maxPossibleScore,
+  rankMembers,
   streakBonusFor
 } from '../src/shared/scoring'
 import { EMOTION_COUNT, EmotionId } from '../src/shared/types'
@@ -34,8 +35,10 @@ import {
   POINTS_BASE,
   POINTS_COMBO,
   POINTS_MINIGAME,
+  PLACEMENT_BONUSES,
   POINTS_PER_EXTRA_MEMBER,
   STREAK_MAX_BONUS,
+  placementBonus,
   requiredForPad
 } from '../src/shared/config'
 
@@ -169,7 +172,9 @@ function round(value: number): number {
 /* Score maths                                                               */
 /* -------------------------------------------------------------------------- */
 
-// Worst case: a circle formed, nothing else.
+// The next three isolate the base/combo/multiplier maths, so they use
+// `memberCount: 1` to switch the placement bonus off. A real circle always has at
+// least two players; the competitive path is covered separately below.
 check(
   'base only',
   computeScore({
@@ -178,7 +183,8 @@ check(
     playerEmotion: Calm,
     featuredEmotion: Joy,
     streakDays: 1,
-    memberCount: 2
+    memberCount: 1,
+  finishRank: 0
   }).total,
   POINTS_BASE
 )
@@ -192,7 +198,8 @@ check(
     playerEmotion: Calm,
     featuredEmotion: Joy,
     streakDays: 1,
-    memberCount: 2
+    memberCount: 1,
+  finishRank: 0
   }).total,
   POINTS_BASE + POINTS_COMBO + POINTS_MINIGAME
 )
@@ -206,7 +213,8 @@ check(
     playerEmotion: Joy,
     featuredEmotion: Joy,
     streakDays: 1,
-    memberCount: 2
+    memberCount: 1,
+  finishRank: 0
   }).total,
   (POINTS_BASE + POINTS_COMBO + POINTS_MINIGAME) * FEATURED_MULTIPLIER
 )
@@ -218,9 +226,10 @@ const duoCeiling = computeScore({
   playerEmotion: Joy,
   featuredEmotion: Joy,
   streakDays: 11,
-  memberCount: 2
+  memberCount: 2,
+  finishRank: 0
 })
-check('duo ceiling', duoCeiling.total, 180)
+check('duo ceiling', duoCeiling.total, Math.round((10 + 20 + 30 + 0 + PLACEMENT_BONUSES[0]) * 2 * 1.5))
 check('maxPossibleScore agrees (duo)', maxPossibleScore(11, 2), duoCeiling.total)
 
 // Squad ceiling: (10 + 20 + 30 + 10) * 2 * 1.5 = 210.
@@ -230,9 +239,10 @@ const squadCeiling = computeScore({
   playerEmotion: Joy,
   featuredEmotion: Joy,
   streakDays: 11,
-  memberCount: 4
+  memberCount: 4,
+  finishRank: 0
 })
-check('squad ceiling', squadCeiling.total, 210)
+check('squad ceiling', squadCeiling.total, Math.round((10 + 20 + 30 + 10 + PLACEMENT_BONUSES[0]) * 2 * 1.5))
 check('maxPossibleScore agrees (squad)', maxPossibleScore(11, 4), squadCeiling.total)
 checkTrue('a bigger circle always pays more', squadCeiling.total > duoCeiling.total)
 
@@ -297,13 +307,18 @@ const itemised = computeScore({
   playerEmotion: Joy,
   featuredEmotion: Joy,
   streakDays: 3,
-    memberCount: 2
+    memberCount: 2,
+  finishRank: 0
 })
 check(
   'breakdown reconciles',
   itemised.total,
   Math.round(
-    (itemised.base + itemised.combo + itemised.miniGame + itemised.groupSize) *
+    (itemised.base +
+      itemised.combo +
+      itemised.miniGame +
+      itemised.groupSize +
+      itemised.placement) *
       itemised.featuredMultiplier *
       (1 + itemised.streakBonus)
   )
@@ -318,7 +333,8 @@ for (let streak = 1; streak <= 12; streak++) {
     playerEmotion: Joy,
     featuredEmotion: Joy,
     streakDays: streak,
-    memberCount: 2
+    memberCount: 2,
+  finishRank: 0
   })
   checkTrue(`streak ${streak} total is an integer`, Number.isInteger(result.total))
 }

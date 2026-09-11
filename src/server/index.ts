@@ -30,7 +30,7 @@ import {
   SyncId,
   WorldState
 } from '../shared/schemas'
-import { computeScore } from '../shared/scoring'
+import { computeScore, rankMembers } from '../shared/scoring'
 import { EMOTION_COUNT, EmotionId, GameInputKind } from '../shared/types'
 import {
   cancelReady,
@@ -361,19 +361,26 @@ function award(
   members: PlayerRecord[],
   success: boolean,
   comboMatched: boolean,
-  circleId: number
+  circleId: number,
+  memberScores: number[]
 ): number[] {
   const featuredEmotion = getFeaturedEmotion()
   const points: number[] = []
 
-  for (const record of members) {
+  // Rank by mini-game performance. Ties share a rank, so nobody is demoted by
+  // array order.
+  const ranks = rankMembers(members.map((_, index) => memberScores[index] ?? 0))
+
+  for (let index = 0; index < members.length; index++) {
+    const record = members[index]
     const breakdown = computeScore({
       comboMatched,
       miniGameSuccess: success,
       playerEmotion: record.emotion,
       featuredEmotion,
       streakDays: record.streakDays,
-      memberCount: members.length
+      memberCount: members.length,
+      finishRank: ranks[index] ?? 0
     })
 
     record.score += breakdown.total
@@ -405,6 +412,9 @@ function award(
         combo: breakdown.combo,
         miniGame: breakdown.miniGame,
         groupSize: breakdown.groupSize,
+        placement: breakdown.placement,
+        finishRank: breakdown.rank,
+        memberCount: members.length,
         featuredMultiplier: breakdown.featuredMultiplier,
         streakBonus: breakdown.streakBonus,
         total: breakdown.total,

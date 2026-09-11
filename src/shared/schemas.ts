@@ -171,7 +171,24 @@ export const CircleProgress = engine.defineComponent('moodmatch::CircleProgress'
   /** Whether the group cleared the mini-game. */
   success: Schemas.Boolean,
   /** Points each member earned, parallel to `CircleCore.members`. */
-  points: Schemas.Array(Schemas.Int)
+  points: Schemas.Array(Schemas.Int),
+  /**
+   * Live per-member performance in the current mini-game, parallel to
+   * `CircleCore.members`.
+   *
+   * This is what the competitive layer is built on: it drives the live standings
+   * players see during a round and the placement bonus paid at the end.
+   */
+  memberScore: Schemas.Array(Schemas.Int),
+  /**
+   * Reaction only: server clock at which the current cue fired, or 0.
+   *
+   * Published only ONCE THE CUE HAS ALREADY FIRED, never in advance. Publishing a
+   * future cue time would let a client schedule a perfect tap and win every round.
+   * The cost is that reaction times include one network hop, which is the same for
+   * everyone and acceptable for a party game.
+   */
+  cueAt: Schemas.Int64
 })
 
 /**

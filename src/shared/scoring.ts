@@ -14,6 +14,7 @@ import {
   POINTS_MINIGAME,
   POINTS_PER_EXTRA_MEMBER,
   STREAK_MAX_BONUS,
+  placementBonus,
   STREAK_STEP
 } from './config'
 import { EmotionId } from './types'
@@ -28,6 +29,10 @@ export interface ScoreBreakdown {
   miniGame: number
   /** Bonus for each member beyond the second. */
   groupSize: number
+  /** Bonus for finishing position inside the circle. */
+  placement: number
+  /** Zero-based finishing rank, so the UI can say "1st". */
+  rank: number
   /** 1, or FEATURED_MULTIPLIER when the player holds the featured emotion. */
   featuredMultiplier: number
   /** Fractional streak bonus, e.g. 0.15 means +15%. */
@@ -55,6 +60,11 @@ export interface ScoreInput {
    * to exist: they are harder to assemble, so they are worth more.
    */
   memberCount: number
+  /**
+   * Zero-based finishing position inside the circle, by mini-game performance.
+   * 0 is the winner. Pass 0 when the round has no individual ranking.
+   */
+  finishRank: number
 }
 
 /**
@@ -80,15 +90,40 @@ export function computeScore(input: ScoreInput): ScoreBreakdown {
   const combo = input.comboMatched ? POINTS_COMBO : 0
   const miniGame = input.miniGameSuccess ? POINTS_MINIGAME : 0
   const groupSize = groupSizeBonus(input.memberCount)
+  // Placement only exists when there is somebody to beat.
+  const placement = input.memberCount > 1 ? placementBonus(input.finishRank) : 0
 
   const featuredMultiplier =
     input.playerEmotion === input.featuredEmotion ? FEATURED_MULTIPLIER : 1
   const streakBonus = streakBonusFor(input.streakDays)
 
-  const subtotal = (base + combo + miniGame + groupSize) * featuredMultiplier
+  const subtotal = (base + combo + miniGame + groupSize + placement) * featuredMultiplier
   const total = Math.round(subtotal * (1 + streakBonus))
 
-  return { base, combo, miniGame, groupSize, featuredMultiplier, streakBonus, total }
+  return {
+    base,
+    combo,
+    miniGame,
+    groupSize,
+    placement,
+    rank: input.finishRank,
+    featuredMultiplier,
+    streakBonus,
+    total
+  }
+}
+
+/**
+ * Ranks circle members by mini-game performance, highest score first.
+ *
+ * Returns a zero-based rank per member, parallel to the input. EQUAL SCORES SHARE A
+ * RANK - two players who both scored 12 are both "1st" and both get the winner's
+ * bonus, rather than one being arbitrarily demoted by array order. That matters for
+ * Sync Tap, where every member scores identically by design.
+ */
+export function rankMembers(scores: number[]): number[] {
+  const sorted = scores.slice().sort((a, b) => b - a)
+  return scores.map((score) => sorted.indexOf(score))
 }
 
 /** Bonus for each member beyond the minimum. Never negative. */
@@ -103,7 +138,11 @@ export function groupSizeBonus(memberCount: number): number {
  */
 export function maxPossibleScore(streakDays: number, memberCount = MIN_CIRCLE_PLAYERS): number {
   return Math.round(
-    (POINTS_BASE + POINTS_COMBO + POINTS_MINIGAME + groupSizeBonus(memberCount)) *
+    (POINTS_BASE +
+      POINTS_COMBO +
+      POINTS_MINIGAME +
+      groupSizeBonus(memberCount) +
+      (memberCount > 1 ? placementBonus(0) : 0)) *
       FEATURED_MULTIPLIER *
       (1 + streakBonusFor(streakDays))
   )

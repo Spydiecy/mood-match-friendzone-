@@ -46,6 +46,10 @@ export interface RoundView {
   members: string[]
   memberNames: string[]
   memberEmotions: EmotionId[]
+  /** Live per-member performance, parallel to `members`. Drives the standings. */
+  memberScore: number[]
+  /** Reaction: clock of an already-fired cue, or 0. */
+  cueAt: number
   /** Local player's index in `members`, or 0 for practice. */
   myIndex: number
   /** True for a local, unscored practice run. */
@@ -68,6 +72,8 @@ export function roundFromPad(pad: PadView): RoundView {
     members: pad.members,
     memberNames: pad.memberNames,
     memberEmotions: pad.memberEmotions,
+    memberScore: pad.memberScore,
+    cueAt: pad.cueAt,
     myIndex: Math.max(0, pad.myIndex),
     practice: false
   }
@@ -95,6 +101,9 @@ export function roundFromPractice(
     members: ['practice'],
     memberNames: ['You'],
     memberEmotions: [myEmotion],
+    memberScore: [practice.memberScore],
+    // Practice fires its own local cue.
+    cueAt: practice.cueAt,
     myIndex: 0,
     practice: true
   }

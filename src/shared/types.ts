@@ -30,11 +30,21 @@ export enum MiniGameKind {
    * all, because a sync only counts when every member's tap lands inside the same
    * short window. It forces people to count down out loud.
    */
-  SyncTap = 3
+  SyncTap = 3,
+  /**
+   * Pure speed: hammer the button, first to the target wins.
+   * The simplest possible competitive round and instantly understood by anyone.
+   */
+  TapRace = 4,
+  /**
+   * Reaction test: the pad flashes GO at an unpredictable moment and the first
+   * player to tap takes the point. Tapping early costs you the cue.
+   */
+  Reaction = 5
 }
 
 /** How many mini-games exist, for the server's random pick. */
-export const MINIGAME_COUNT = 4
+export const MINIGAME_COUNT = 6
 
 /** Lifecycle of a Mood Circle. */
 export enum CirclePhase {

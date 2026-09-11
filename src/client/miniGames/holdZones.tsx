@@ -17,6 +17,7 @@ import { COLORS, FONT, RADIUS, SPACE, TOUCH, emotionColor, emotionShade } from '
 import { Icon, ProgressBar, Row, Text } from '../ui/widgets'
 import { RoundView, countdownSeconds, inCountdown, secondsLeft } from './round'
 import { inputHoldEnd, inputHoldStart, isHolding } from './input'
+import { Standings } from './standings'
 
 /** True when the member at `index` is currently holding. */
 function memberHolding(round: RoundView, index: number): boolean {
@@ -108,6 +109,8 @@ export function HoldZonesPanel(props: { round: RoundView }) {
         width={640}
         marginTop={SPACE.sm}
       />
+
+      <Standings round={round} />
 
       <UiEntity uiTransform={{ width: 470, height: 14, margin: { top: SPACE.xs } }}>
         <ProgressBar

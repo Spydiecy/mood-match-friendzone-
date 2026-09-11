@@ -23,7 +23,11 @@ import {
   RHYTHM_BEAT_MS,
   RHYTHM_SUCCESS_RATIO,
   RHYTHM_TOLERANCE_MS,
-  SYNC_TARGET
+  REACTION_CUES,
+  REACTION_MAX_DELAY_MS,
+  REACTION_MIN_DELAY_MS,
+  SYNC_TARGET,
+  TAP_RACE_TARGET
 } from '../shared/config'
 import { NoticeTone } from '../shared/messages'
 import { EMOTION_COUNT, EmotionId, MINIGAME_COUNT, MiniGameKind } from '../shared/types'
@@ -33,6 +37,19 @@ import { PracticeState, showNotice, state } from './state'
 
 /** Short lead-in so the player can read what they are about to do. */
 const PRACTICE_COUNTDOWN_MS = 2200
+
+/** A random wait before the next practice Reaction cue. Mirrors the server. */
+function practiceCueDelay(): number {
+  return (
+    REACTION_MIN_DELAY_MS +
+    Math.random() * (REACTION_MAX_DELAY_MS - REACTION_MIN_DELAY_MS)
+  )
+}
+
+/** True when a practice Reaction cue is live right now. */
+function practiceCueLive(practice: PracticeState, now: number): boolean {
+  return practice.cueAt > 0 && now >= practice.cueAt
+}
 
 /** Beats a practice round contains. Matches the server's grid. */
 function beatCount(): number {
@@ -107,6 +124,9 @@ export function startPractice(game?: MiniGameKind): void {
     allHoldMs: 0,
     step: 0,
     syncs: 0,
+    memberScore: 0,
+    cueAt: chosen === MiniGameKind.Reaction ? startsAt + practiceCueDelay() : 0,
+    cuesDone: 0,
     sequence: buildPracticeSequence(),
     finished: false,
     success: false
@@ -146,6 +166,28 @@ export function practiceTap(): void {
 
   const now = Date.now()
   if (now < practice.startsAt) return
+
+  if (practice.game === MiniGameKind.TapRace) {
+    practice.memberScore++
+    playSfx('tap')
+    return
+  }
+
+  if (practice.game === MiniGameKind.Reaction) {
+    if (practiceCueLive(practice, now)) {
+      practice.cuesDone++
+      practice.memberScore++
+      // Schedule the next cue, or stop once the round's cues are done.
+      practice.cueAt =
+        practice.cuesDone >= REACTION_CUES ? 0 : now + practiceCueDelay()
+      playSfx('tap')
+    } else {
+      // Same penalty the server applies: an early tap costs you this cue.
+      practice.cueAt = now + practiceCueDelay()
+      playSfx('fail')
+    }
+    return
+  }
 
   if (practice.game === MiniGameKind.SyncTap) {
     // Solo, so "everyone tapped together" reduces to one in-zone tap. The real
@@ -244,6 +286,10 @@ function computeProgress(practice: PracticeState): number {
         : Math.min(1, practice.step / practice.sequence.length)
     case MiniGameKind.SyncTap:
       return Math.min(1, practice.syncs / SYNC_TARGET)
+    case MiniGameKind.TapRace:
+      return Math.min(1, practice.memberScore / TAP_RACE_TARGET)
+    case MiniGameKind.Reaction:
+      return Math.min(1, practice.cuesDone / REACTION_CUES)
     default:
       return 0
   }
@@ -259,6 +305,10 @@ function objectiveMet(practice: PracticeState): boolean {
       return practice.step >= practice.sequence.length
     case MiniGameKind.SyncTap:
       return practice.syncs >= SYNC_TARGET
+    case MiniGameKind.TapRace:
+      return practice.memberScore >= TAP_RACE_TARGET
+    case MiniGameKind.Reaction:
+      return practice.cuesDone >= REACTION_CUES
     default:
       return false
   }

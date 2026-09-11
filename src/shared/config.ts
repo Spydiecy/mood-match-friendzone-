@@ -175,6 +175,35 @@ export const SYNC_WINDOW_MS = 700
 /** Sync Tap: successful group syncs needed to clear the round. */
 export const SYNC_TARGET = 3
 
+/** Tap Race: taps needed to win the race. */
+export const TAP_RACE_TARGET = 24
+
+/** Reaction: how many cues fire in a round. */
+export const REACTION_CUES = 4
+
+/** Reaction: shortest and longest wait before a cue fires, in ms. */
+export const REACTION_MIN_DELAY_MS = 900
+export const REACTION_MAX_DELAY_MS = 2200
+
+/**
+ * Placement bonus by finishing position, best first.
+ *
+ * THIS IS WHAT MAKES A ROUND A GAME. Circles are cooperative to FORM - you cannot
+ * play at all without other people - but inside a round players now compete, and
+ * whoever performs best takes the biggest share. Purely shared outcomes gave
+ * nobody a reason to try hard.
+ *
+ * Everyone still gets something: last place is +2, not zero, so a beginner in a
+ * circle with a regular is not humiliated and still wants another round.
+ */
+export const PLACEMENT_BONUSES: ReadonlyArray<number> = [16, 9, 5, 2]
+
+/** Placement bonus for a given zero-based rank. */
+export function placementBonus(rank: number): number {
+  if (rank < 0) return 0
+  return PLACEMENT_BONUSES[Math.min(rank, PLACEMENT_BONUSES.length - 1)]
+}
+
 /** Scoring --------------------------------------------------------------- */
 
 /** Points for forming a valid circle at all. */

@@ -247,21 +247,27 @@ for (label, tier, required, where, angle), (_, x, z) in zip(PADS, pad_points):
 
 # --- Leaderboard board ------------------------------------------------------
 board = new_entity("LeaderboardBoard")
-transform(board, (CENTER[0], 3.4, BOARD_Z), scale=(11.0, 6.0, 0.4))
+transform(board, (CENTER[0], 3.0, BOARD_Z), scale=(9.0, 5.0, 0.4))
 mesh(board, "box")
 material(board, (0.06, 0.07, 0.13), roughness=0.85)
 collider(board, "box")
 
 board_frame = new_entity("LeaderboardFrame")
-transform(board_frame, (CENTER[0], 3.4, BOARD_Z + 0.25), scale=(11.6, 6.6, 0.2))
+transform(board_frame, (CENTER[0], 3.0, BOARD_Z + 0.25), scale=(9.5, 5.5, 0.2))
 mesh(board_frame, "box")
 material(board_frame, (0.29, 0.62, 1.0), emissive=0.7, roughness=0.4)
 
 board_sign = new_entity("LeaderboardSign")
-# Rotated 180 degrees about Y so the text faces the plaza (toward -Z), offset just
-# in front of the board face so it does not clip into it.
-transform(board_sign, (CENTER[0], 3.5, BOARD_Z - 0.35), rotation=(0, 1, 0, 0))
-text(board_sign, "TOP MOODS", 1.05)
+# NO manual rotation, and a Y-axis billboard instead.
+#
+# TextShape faces -Z by DEFAULT, not +Z. The previous version rotated this 180
+# degrees about Y on the assumption it faced +Z, which turned it to face away from
+# the plaza - so players read it through the back of the board and every line came
+# out MIRRORED ("SDOOM POT"). Billboarding removes the guesswork entirely: the text
+# always turns to face whoever is reading it, and stays upright.
+transform(board_sign, (CENTER[0], 3.0, BOARD_Z - 0.45))
+text(board_sign, "TOP MOODS", 1.5)
+billboard(board_sign)
 
 welcome = new_entity("WelcomeSign")
 transform(welcome, (CENTER[0], 2.6, 6.2))

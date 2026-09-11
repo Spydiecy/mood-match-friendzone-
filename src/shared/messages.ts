@@ -137,6 +137,12 @@ export const MoodMessages = {
     miniGame: Schemas.Int,
     /** Bonus for circle size, so a Squad round visibly pays more than a Duo. */
     groupSize: Schemas.Int,
+    /** Bonus for finishing position inside the circle. */
+    placement: Schemas.Int,
+    /** Zero-based finishing position, so the panel can say "1st of 3". */
+    finishRank: Schemas.Int,
+    /** How many players were in the circle. */
+    memberCount: Schemas.Int,
     featuredMultiplier: Schemas.Int,
     streakBonus: Schemas.Float,
     total: Schemas.Int,

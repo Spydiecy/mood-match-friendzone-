@@ -25,6 +25,7 @@ import {
   secondsLeft
 } from './round'
 import { inputColorTap } from './input'
+import { Standings } from './standings'
 import {
   colorFlash,
   lastTapWrong,
@@ -171,6 +172,8 @@ export function ColorMatchPanel(props: { round: RoundView }) {
           />
         ))}
       </Row>
+
+      <Standings round={round} />
 
       <UiEntity uiTransform={{ width: 470, height: 14, margin: { top: SPACE.xs } }}>
         <ProgressBar value={round.progress} fill={COLORS.accent} height={14} />

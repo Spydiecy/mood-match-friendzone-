@@ -32,8 +32,12 @@ import {
   RHYTHM_BEAT_MS,
   RHYTHM_SUCCESS_RATIO,
   RHYTHM_TOLERANCE_MS,
+  REACTION_CUES,
+  REACTION_MAX_DELAY_MS,
+  REACTION_MIN_DELAY_MS,
   SYNC_TARGET,
-  SYNC_WINDOW_MS
+  SYNC_WINDOW_MS,
+  TAP_RACE_TARGET
 } from '../shared/config'
 import { requiredForPad } from '../shared/config'
 import { markerInZone } from '../shared/syncTap'
@@ -56,7 +60,13 @@ export interface CircleHooks {
    * Pays out a resolved circle. Returns points per member, parallel to `members`.
    * Implemented in `index.ts` because it needs the leaderboard and persistence.
    */
-  award: (members: PlayerRecord[], success: boolean, comboMatched: boolean, circleId: number) => number[]
+  award: (
+    members: PlayerRecord[],
+    success: boolean,
+    comboMatched: boolean,
+    circleId: number,
+    memberScores: number[]
+  ) => number[]
   /** Sends a toast to one player. */
   notify: (address: string, code: RefusalCode, text: string, tone: NoticeTone) => void
   /** Announces that a circle formed, so clients can play a cue. */
@@ -103,6 +113,29 @@ interface PadRuntime {
   holdSeenAt: number[]
   /** Accumulated ms during which EVERY member was holding. */
   allHoldMs: number
+
+  /* Competitive scoring -------------------------------------------------- */
+  /**
+   * Per-member performance in the current mini-game, by member index.
+   *
+   * Every game feeds this, which is what lets one placement mechanism serve all
+   * six of them.
+   */
+  memberScore: number[]
+
+  /* Tap Race ------------------------------------------------------------- */
+  /** True once someone has reached the tap target. */
+  raceWon: boolean
+
+  /* Reaction ------------------------------------------------------------- */
+  /** Server clock at which the current cue fires. 0 when none is scheduled. */
+  cueAt: number
+  /** True once the current cue has fired and is claimable. */
+  cueLive: boolean
+  /** Cues completed so far. */
+  cuesDone: number
+  /** Member indices that jumped the gun and are locked out of this cue. */
+  cueLockout: number[]
 
   /* Sync Tap ------------------------------------------------------------- */
   /** Last tap time per member index, for the simultaneity check. */
@@ -199,6 +232,12 @@ export function initCircles(
       holdMask: 0,
       holdSeenAt: [],
       allHoldMs: 0,
+      memberScore: [],
+      raceWon: false,
+      cueAt: 0,
+      cueLive: false,
+      cuesDone: 0,
+      cueLockout: [],
       syncTapAt: [],
       syncs: 0,
       step: 0,
@@ -287,6 +326,8 @@ export function handleGameInput(
     case GameInputKind.Tap:
       if (pad.game === MiniGameKind.RhythmTap) judgeRhythmTap(pad, memberIndex, now)
       else if (pad.game === MiniGameKind.SyncTap) judgeSyncTap(pad, memberIndex, now)
+      else if (pad.game === MiniGameKind.TapRace) judgeTapRace(pad, memberIndex)
+      else if (pad.game === MiniGameKind.Reaction) judgeReaction(pad, memberIndex, now)
       break
 
     case GameInputKind.HoldStart:
@@ -356,6 +397,7 @@ function judgeRhythmTap(pad: PadRuntime, memberIndex: number, now: number): void
 
   pad.beatHits[beat] |= bit
   pad.hits++
+  bumpScore(pad, memberIndex, 1)
 }
 
 /**
@@ -376,6 +418,9 @@ function judgeColorTap(pad: PadRuntime, memberIndex: number, tapped: number): vo
   }
 
   pad.stepMask |= 1 << memberIndex
+  // Credit the contribution, so the player who keeps up scores higher than the one
+  // the group is always waiting on.
+  bumpScore(pad, memberIndex, 1)
 
   if (pad.stepMask === fullMemberMask(pad)) {
     pad.step++
@@ -411,8 +456,76 @@ function judgeSyncTap(pad: PadRuntime, memberIndex: number, now: number): void {
 
   if (everyoneTapped) {
     pad.syncs++
+    // A sync belongs to the whole group, so everyone is credited equally. Sync Tap
+    // is deliberately the one round with no individual winner.
+    for (let i = 0; i < pad.members.length; i++) bumpScore(pad, i, 1)
     pad.syncTapAt = new Array<number>(pad.members.length).fill(0)
   }
+}
+
+/** Adds to a member's live score, growing the array if needed. */
+function bumpScore(pad: PadRuntime, memberIndex: number, amount: number): void {
+  pad.memberScore[memberIndex] = (pad.memberScore[memberIndex] ?? 0) + amount
+}
+
+/**
+ * Tap Race: pure speed. Every tap counts, first to the target wins the round for
+ * the group.
+ *
+ * The group objective is "somebody got there", so a fast player carries everyone to
+ * the mini-game bonus while placement still rewards them for being fastest. That
+ * keeps a slower player glad to be in the circle rather than resentful.
+ */
+function judgeTapRace(pad: PadRuntime, memberIndex: number): void {
+  bumpScore(pad, memberIndex, 1)
+  if ((pad.memberScore[memberIndex] ?? 0) >= TAP_RACE_TARGET) {
+    pad.raceWon = true
+  }
+}
+
+/** A random wait before the next Reaction cue. */
+function nextCueDelay(): number {
+  return (
+    REACTION_MIN_DELAY_MS +
+    Math.random() * (REACTION_MAX_DELAY_MS - REACTION_MIN_DELAY_MS)
+  )
+}
+
+/**
+ * Reaction: first tap after the cue fires takes the point.
+ *
+ * Tapping BEFORE the cue locks you out of that cue, so mashing is actively
+ * punished rather than being a free win - without that, the whole game degenerates
+ * into holding the button down.
+ */
+function judgeReaction(pad: PadRuntime, memberIndex: number, now: number): void {
+  if (!pad.cueLive) {
+    // Jumped the gun.
+    if (pad.cueLockout.indexOf(memberIndex) === -1) {
+      pad.cueLockout.push(memberIndex)
+    }
+    return
+  }
+
+  if (pad.cueLockout.indexOf(memberIndex) !== -1) return
+
+  // First claim wins the cue.
+  bumpScore(pad, memberIndex, 1)
+  pad.cuesDone++
+  pad.cueLive = false
+  pad.cueLockout = []
+  pad.cueAt = pad.cuesDone >= REACTION_CUES ? 0 : now + nextCueDelay()
+}
+
+/** Advances the Reaction cue schedule. Called from the playing tick. */
+function tickReaction(pad: PadRuntime, now: number): void {
+  if (pad.game !== MiniGameKind.Reaction) return
+  if (pad.cueLive) return
+  if (pad.cueAt === 0) return
+  if (now < pad.cueAt) return
+
+  pad.cueLive = true
+  pad.cueLockout = []
 }
 
 /** Bitmask with one bit set per member. */
@@ -449,6 +562,12 @@ function computeProgress(pad: PadRuntime): number {
       return pad.sequence.length === 0 ? 0 : Math.min(1, pad.step / pad.sequence.length)
     case MiniGameKind.SyncTap:
       return Math.min(1, pad.syncs / SYNC_TARGET)
+    case MiniGameKind.TapRace: {
+      const best = pad.memberScore.reduce((m, v) => Math.max(m, v), 0)
+      return Math.min(1, best / TAP_RACE_TARGET)
+    }
+    case MiniGameKind.Reaction:
+      return Math.min(1, pad.cuesDone / REACTION_CUES)
     default:
       return 0
   }
@@ -467,6 +586,10 @@ function objectiveMet(pad: PadRuntime): boolean {
       return pad.step >= pad.sequence.length
     case MiniGameKind.SyncTap:
       return pad.syncs >= SYNC_TARGET
+    case MiniGameKind.TapRace:
+      return pad.raceWon
+    case MiniGameKind.Reaction:
+      return pad.cuesDone >= REACTION_CUES
     default:
       return false
   }
@@ -640,6 +763,14 @@ function startCountdown(pad: PadRuntime, members: PlayerRecord[], now: number): 
   pad.allHoldMs = 0
   pad.syncTapAt = new Array<number>(pad.members.length).fill(0)
   pad.syncs = 0
+  pad.memberScore = new Array<number>(pad.members.length).fill(0)
+  pad.raceWon = false
+  pad.cuesDone = 0
+  pad.cueLive = false
+  pad.cueLockout = []
+  // Reaction schedules its first cue relative to the start of play.
+  pad.cueAt =
+    pad.game === MiniGameKind.Reaction ? pad.startsAt + nextCueDelay() : 0
   pad.step = 0
   pad.stepMask = 0
   pad.success = false
@@ -720,6 +851,14 @@ function tickPlaying(pad: PadRuntime, dtMs: number, now: number): void {
     if (pad.holdMask === fullMemberMask(pad)) {
       pad.allHoldMs += dtMs
     }
+
+    // Individually, credit every member for the time THEY held, in tenths of a
+    // second. The group needs everyone, but the player who never lets go wins.
+    for (let i = 0; i < pad.members.length; i++) {
+      if ((pad.holdMask & (1 << i)) !== 0) {
+        bumpScore(pad, i, dtMs / 100)
+      }
+    }
   }
 
   // A member who disconnects mid-round is dropped; if too few remain the round
@@ -732,6 +871,8 @@ function tickPlaying(pad: PadRuntime, dtMs: number, now: number): void {
     resolvePad(pad, now, false)
     return
   }
+
+  tickReaction(pad, now)
 
   if (objectiveMet(pad) || now >= pad.endsAt) {
     resolvePad(pad, now, objectiveMet(pad))
@@ -753,7 +894,14 @@ function resolvePad(pad: PadRuntime, now: number, success: boolean): void {
     if (record) members.push(record)
   }
 
-  pad.points = hooks?.award(members, success, pad.comboBonus > 0, pad.circleId) ?? []
+  pad.points =
+    hooks?.award(
+      members,
+      success,
+      pad.comboBonus > 0,
+      pad.circleId,
+      pad.memberScore.map((v) => Math.round(v))
+    ) ?? []
 
   for (const record of members) {
     record.activePad = -1
@@ -805,6 +953,12 @@ function resetPad(pad: PadRuntime): void {
   pad.allHoldMs = 0
   pad.syncTapAt = []
   pad.syncs = 0
+  pad.memberScore = []
+  pad.raceWon = false
+  pad.cueAt = 0
+  pad.cueLive = false
+  pad.cuesDone = 0
+  pad.cueLockout = []
   pad.step = 0
   pad.stepMask = 0
   pad.comboId = ''
@@ -845,6 +999,7 @@ function dropMember(pad: PadRuntime, memberIndex: number): void {
   pad.stepMask = compactMask(pad.stepMask, memberIndex)
   pad.holdSeenAt.splice(memberIndex, 1)
   pad.syncTapAt.splice(memberIndex, 1)
+  pad.memberScore.splice(memberIndex, 1)
   for (let i = 0; i < pad.beatHits.length; i++) {
     pad.beatHits[i] = compactMask(pad.beatHits[i], memberIndex)
   }
@@ -943,4 +1098,7 @@ function writeProgress(pad: PadRuntime, now: number, force: boolean): void {
   progress.resolved = pad.phase === CirclePhase.Result
   progress.success = pad.success
   progress.points = pad.points.slice()
+  progress.memberScore = pad.memberScore.map((v) => Math.round(v))
+  // Only ever the time of a cue that has ALREADY fired - see the schema comment.
+  progress.cueAt = pad.cueLive ? pad.cueAt : 0
 }

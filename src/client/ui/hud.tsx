@@ -31,7 +31,14 @@ import {
   pingPlaza,
   waitingElsewhere
 } from '../circle'
-import { ALL_MINI_GAMES, MiniGameAction, MiniGamePanel, miniGameName } from '../miniGames'
+import {
+  ALL_MINI_GAMES,
+  MiniGameAction,
+  MiniGamePanel,
+  isCompetitive,
+  miniGameName
+} from '../miniGames'
+import { ordinal } from '../miniGames/standings'
 import { roundFromPad, roundFromPractice } from '../miniGames/round'
 import { practiceBest, startPractice, stopPractice } from '../practice'
 import { ComboPreview, StartingCard } from './startingCard'
@@ -365,6 +372,14 @@ function RoundResult() {
 
   const mine = pad.myIndex >= 0 ? pad.points[pad.myIndex] ?? 0 : 0
 
+  // Who actually won the round, by mini-game performance.
+  const best = pad.memberScore.reduce((m, v) => Math.max(m, v), 0)
+  const winners = pad.memberScore
+    .map((score, index) => ({ score, index }))
+    .filter((entry) => best > 0 && entry.score === best)
+  const iWon = winners.some((w) => w.index === pad.myIndex)
+  const ranked = isCompetitive(pad.game) && pad.members.length > 1 && best > 0
+
   return (
     <Panel
       width={620}
@@ -387,15 +402,52 @@ function RoundResult() {
           width={420}
         />
       </Row>
+      {/* Who won. This is the payoff of making rounds competitive - somebody has
+          to be named, or the race had no point. */}
+      {ranked && (
+        <Text
+          value={
+            iWon
+              ? winners.length > 1
+                ? 'Joint winner'
+                : 'You won the round'
+              : `${trimWinner(pad.memberNames[winners[0]?.index ?? 0] ?? 'Someone')} won it`
+          }
+          fontSize={FONT.heading}
+          color={iWon ? COLORS.good : COLORS.textDim}
+          width={520}
+        />
+      )}
+
       <Text
         value={`+${mine} points`}
         fontSize={FONT.hero}
         color={COLORS.text}
         width={420}
       />
-      <Row width="100%" justifyContent="center" marginTop={SPACE.sm}>
+
+      {/* Final standings, so everyone can see the order. */}
+      <Row width="100%" justifyContent="center" marginTop={SPACE.xs}>
         {pad.members.map((address, index) => (
-          <EmotionBadge key={address} emotion={pad.memberEmotions[index] ?? 0} size={44} />
+          <UiEntity
+            key={address}
+            uiTransform={{
+              width: 82,
+              height: 68,
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <EmotionBadge emotion={pad.memberEmotions[index] ?? 0} size={38} />
+            <Text
+              value={ranked ? String(pad.memberScore[index] ?? 0) : ''}
+              fontSize={FONT.tiny}
+              color={
+                ranked && (pad.memberScore[index] ?? 0) === best ? COLORS.good : COLORS.textDim
+              }
+            />
+          </UiEntity>
         ))}
       </Row>
     </Panel>
@@ -470,6 +522,12 @@ function PayoutPanel() {
       {payout.groupSize > 0 && (
         <PayoutLine label="Bigger circle" value={`+${payout.groupSize}`} />
       )}
+      {payout.placement > 0 && (
+        <PayoutLine
+          label={`Finished ${ordinal(payout.finishRank)} of ${payout.memberCount}`}
+          value={`+${payout.placement}`}
+        />
+      )}
       {payout.featuredMultiplier > 1 && (
         <PayoutLine label="Featured mood" value={`x${payout.featuredMultiplier}`} />
       )}
@@ -493,6 +551,13 @@ function PayoutPanel() {
       )}
     </Panel>
   )
+}
+
+/** Keeps a winner's name short in the result headline. */
+function trimWinner(name: string): string {
+  if (!name) return 'Someone'
+  if (name.length <= 12) return name
+  return name.slice(0, 11) + '.'
 }
 
 /** One row of the payout breakdown. */
