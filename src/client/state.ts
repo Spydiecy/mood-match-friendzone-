@@ -35,6 +35,8 @@ export interface PayoutView {
   placement: number
   /** Zero-based finishing position. */
   finishRank: number
+  /** How many players shared that position, including this one. 1 for an outright. */
+  tiedAtRank: number
   /** How many players were in the circle. */
   memberCount: number
   featuredMultiplier: number
@@ -75,6 +77,18 @@ export interface PadView {
   points: number[]
   /** Live per-member mini-game performance, parallel to `members`. */
   memberScore: number[]
+  /**
+   * Tap Race only: RAW taps per member, parallel to `members`. Empty otherwise.
+   *
+   * The race is run and judged in raw taps, so the race has to be DISPLAYED in raw
+   * taps. `memberScore` is perk-weighted and does not track the target.
+   */
+  memberTaps: number[]
+  /**
+   * Each member's current finishing position, zero-based, parallel to `members`.
+   * The server's own ordering - never recompute it from `memberScore`.
+   */
+  memberRank: number[]
   /** Reaction: server clock of a cue that has already fired, or 0. */
   cueAt: number
   /** True when the local player is a member. */

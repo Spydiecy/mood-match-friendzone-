@@ -62,6 +62,22 @@ export function markerPosition(startsAt: number, now: number): number {
   return phase < 0.5 ? phase * 2 : 2 - phase * 2
 }
 
+/**
+ * Which pass across the bar the marker is on, counting from 0.
+ *
+ * The marker crosses the target zone once per HALF sweep - once going right, once coming
+ * back - so a half-sweep index uniquely identifies each opportunity to score. Used to
+ * credit a member at most once per pass: without it, a player could hold their thumb
+ * down and collect a point for every frame the marker spent inside the zone.
+ *
+ * Derived from the same accelerating phase as `markerPosition`, so it stays in step with
+ * the bar as the sweep speeds up.
+ */
+export function zonePass(startsAt: number, now: number): number {
+  const elapsed = Math.max(0, now - startsAt)
+  return Math.floor(sweepsElapsed(elapsed) * 2)
+}
+
 /** The sweep period in force at `elapsed` ms into the round, for display and tests. */
 export function sweepPeriod(elapsed: number): number {
   const clamped = Math.min(Math.max(0, elapsed), MINIGAME_DURATION_MS)

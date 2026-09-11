@@ -181,6 +181,34 @@ export const CircleProgress = engine.defineComponent('moodmatch::CircleProgress'
    */
   memberScore: Schemas.Array(Schemas.Int),
   /**
+   * Tap Race only: RAW tap count per member, parallel to `CircleCore.members`.
+   *
+   * Separate from `memberScore` because the two measure different things and the panel
+   * needs the raw one. `memberScore` is perk-weighted, so an Energy player's score runs
+   * ahead of their actual taps - and the panel was drawing every racer's bar as
+   * `memberScore / TAP_RACE_TARGET` against a target counted in RAW taps. An Energy
+   * player therefore watched their bar fill completely and then not win, and the
+   * "leading" marker regularly pointed at somebody who was behind in the race.
+   *
+   * Empty for every other game, so it costs nothing where it is not needed.
+   */
+  memberTaps: Schemas.Array(Schemas.Int),
+  /**
+   * Each member's CURRENT finishing position, zero-based, parallel to
+   * `CircleCore.members`. Equal results share a rank.
+   *
+   * THE SERVER'S OWN ORDERING, published so no client ever has to reconstruct it. The
+   * client used to derive the leader by taking the highest `memberScore`, and once Tap
+   * Race gained a first-past-the-post tiebreak that stopped matching: the server ranks
+   * whoever did not reach the target on their perk-weighted score, so a player with
+   * fewer raw taps but a mood multiplier could be paid the winner's prize while the HUD
+   * crowned somebody else. Two rankings meant two answers.
+   *
+   * There is exactly one ranking now, computed once per push by the same `rankMembers`
+   * the payout uses. A rank of 0 held by more than one member is a genuine joint lead.
+   */
+  memberRank: Schemas.Array(Schemas.Int),
+  /**
    * Reaction only: server clock at which the current cue fired, or 0.
    *
    * Published only ONCE THE CUE HAS ALREADY FIRED, never in advance. Publishing a

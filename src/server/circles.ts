@@ -18,6 +18,7 @@ import { Entity, engine } from '@dcl/sdk/ecs'
 import {
   CIRCLE_PROXIMITY,
   CUE_EXPIRY_MS,
+  CUE_GRACE_MS,
   COLOR_MISTAKE_SETBACK,
   COLOR_PALETTE_SIZE,
   COLOR_SEQUENCE_LENGTH,
@@ -25,12 +26,14 @@ import {
   HOLD_BREAK_PENALTY_MS,
   HOLD_EXPIRY_MS,
   HOLD_REQUIRED_MS,
+  HOLD_SCORE_INTERVAL_MS,
   MAX_CIRCLE_PLAYERS,
   MINIGAME_DURATION_MS,
   MIN_CIRCLE_PLAYERS,
   PAD_DWELL_MS,
   PAD_POSITIONS,
   PAD_RADIUS,
+  PERK_GIFT_ACTIVE_GAP,
   PROGRESS_PUSH_MS,
   RESULT_MS,
   RHYTHM_SUCCESS_RATIO,
@@ -45,7 +48,8 @@ import {
 import { requiredForPad } from '../shared/config'
 import { applyMoodPerk, toleranceFor } from '../shared/moodPerks'
 import { beatCount, beatOffset, nearestBeat } from '../shared/rhythm'
-import { markerInZone } from '../shared/syncTap'
+import { rankMembers } from '../shared/scoring'
+import { markerInZone, zonePass } from '../shared/syncTap'
 import { evaluateCombo } from '../shared/emotions'
 import { NoticeTone, RefusalCode } from '../shared/messages'
 import { CircleCore, CircleProgress, padCircleSyncId } from '../shared/schemas'
@@ -70,7 +74,12 @@ export interface CircleHooks {
     success: boolean,
     comboMatched: boolean,
     circleId: number,
-    memberScores: number[]
+    memberScores: number[],
+    /**
+     * When each member completed the round's individual objective, 0 for one who did
+     * not. Outranks `memberScores`, so the player who finished first places first.
+     */
+    finishedAt: number[]
   ) => number[]
   /** Sends a toast to one player. */
   notify: (address: string, code: RefusalCode, text: string, tone: NoticeTone) => void
@@ -125,6 +134,13 @@ interface PadRuntime {
    * than every tick the chain is down.
    */
   holdChainLive: boolean
+  /**
+   * Milliseconds each member has held since their last scoring point, by member index.
+   *
+   * Turns a continuous hold into the discrete actions the mood perks are defined over -
+   * see `HOLD_SCORE_INTERVAL_MS`.
+   */
+  holdCredit: number[]
 
   /* Competitive scoring -------------------------------------------------- */
   /**
@@ -139,16 +155,26 @@ interface PadRuntime {
    * Drives the "every Nth point" perks (Focus, Love).
    */
   perkCounter: number[]
+  /**
+   * Server clock at which each member completed the round's INDIVIDUAL objective,
+   * or 0 for one who never did.
+   *
+   * Only Tap Race has such an objective today: crossing `TAP_RACE_TARGET` raw taps.
+   * It is the top-level ranking key, ahead of `memberScore`, so the player who
+   * actually won the race takes first place - see `rankMembers`.
+   */
+  finishedAt: number[]
 
   /* Tap Race ------------------------------------------------------------- */
   /**
    * Raw tap count per member, WITHOUT perk inflation.
    *
-   * The objective and the progress bar read this, so "First to 24" means 24 actual
+   * The objective and the progress bar read this, so "First to 30" means 30 actual
    * taps for every mood. Comparing the perk-inflated `memberScore` against the
-   * target meant Energy needed 12 taps where Calm needed 24, and it inverted the
+   * target meant Energy needed 15 taps where Calm needed 30, and it inverted the
    * perk design by making selfish moods clear the SHARED objective faster.
-   * `memberScore` still drives ranking, so perks continue to decide placement.
+   * `memberScore` still orders everyone who did not finish, so perks continue to
+   * decide the rest of the placings.
    */
   taps: number[]
 
@@ -161,10 +187,24 @@ interface PadRuntime {
   cuesDone: number
   /** Member indices that jumped the gun and are locked out of this cue. */
   cueLockout: number[]
+  /**
+   * Server clock at which the last cue was claimed, or 0.
+   *
+   * Only used to forgive taps that lost the race by less than a network round-trip -
+   * see `CUE_GRACE_MS`.
+   */
+  cueClaimedAt: number
 
   /* Sync Tap ------------------------------------------------------------- */
   /** Last tap time per member index, for the simultaneity check. */
   syncTapAt: number[]
+  /**
+   * The last sweep pass on which each member scored an individual in-zone tap, or -1.
+   *
+   * Stops a held or mashed button collecting a point per frame while the marker is in
+   * the zone: one pass, one point.
+   */
+  syncScoredPass: number[]
   /** Completed group syncs. */
   syncs: number
 
@@ -236,6 +276,8 @@ export function initCircles(
       success: false,
       points: [],
       memberScore: [],
+      memberTaps: [],
+      memberRank: [],
       cueAt: 0
     })
 
@@ -260,14 +302,18 @@ export function initCircles(
       holdSeenAt: [],
       allHoldMs: 0,
       holdChainLive: false,
+      holdCredit: [],
       memberScore: [],
       perkCounter: [],
+      finishedAt: [],
       taps: [],
       cueAt: 0,
       cueLive: false,
       cuesDone: 0,
       cueLockout: [],
+      cueClaimedAt: 0,
       syncTapAt: [],
+      syncScoredPass: [],
       syncs: 0,
       step: 0,
       stepMask: 0,
@@ -355,7 +401,7 @@ export function handleGameInput(
     case GameInputKind.Tap:
       if (pad.game === MiniGameKind.RhythmTap) judgeRhythmTap(pad, memberIndex, now)
       else if (pad.game === MiniGameKind.SyncTap) judgeSyncTap(pad, memberIndex, now)
-      else if (pad.game === MiniGameKind.TapRace) judgeTapRace(pad, memberIndex)
+      else if (pad.game === MiniGameKind.TapRace) judgeTapRace(pad, memberIndex, now)
       else if (pad.game === MiniGameKind.Reaction) judgeReaction(pad, memberIndex, now)
       break
 
@@ -482,6 +528,26 @@ function judgeSyncTap(pad: PadRuntime, memberIndex: number, now: number): void {
 
   pad.syncTapAt[memberIndex] = now
 
+  // Credit the individual for landing THIS pass, at most once per pass.
+  //
+  // Without this, a member's whole round was the handful of completed group syncs, which
+  // meant four scoring actions each and nothing a player did that changed their own
+  // total. Placement in Sync Tap was then decided purely by which mood you happened to
+  // be carrying - Energy and Focus always 6, everyone else always 4 - which is no way to
+  // settle a prize that can be worth 54 points.
+  //
+  // Personal accuracy now counts: hit the zone on more passes and you outscore a member
+  // who kept mistiming it, even though neither of you can complete a sync alone. The
+  // group objective is untouched - the bar still only moves when everybody lands together.
+  //
+  // Keyed on the pass index rather than a timestamp so holding the button down through
+  // the zone earns one point, not one per frame.
+  const pass = zonePass(pad.startsAt, now)
+  if (pad.syncScoredPass[memberIndex] !== pass) {
+    pad.syncScoredPass[memberIndex] = pass
+    scoreWithPerk(pad, memberIndex, 1)
+  }
+
   const everyoneTapped = pad.members.every((_, index) => {
     const at = pad.syncTapAt[index] ?? 0
     if (at === 0) return false
@@ -493,10 +559,19 @@ function judgeSyncTap(pad: PadRuntime, memberIndex: number, now: number): void {
 
   if (everyoneTapped) {
     pad.syncs++
-    // A sync belongs to the whole group, so everyone is credited equally. Sync Tap
-    // is deliberately the one round with no individual winner, so this stays raw -
-    // a perk here would break the "everyone scores the same" guarantee it relies on.
-    for (let i = 0; i < pad.members.length; i++) bumpScore(pad, i, 1)
+
+    // A sync belongs to the whole group, so every member is credited for it - but
+    // through their own mood perk, so what the sync is WORTH still depends on the mood
+    // they brought.
+    //
+    // This used to be a raw `bumpScore` to guarantee that every member of a Sync Tap
+    // circle finished on an identical score. That guarantee cost more than it bought:
+    // it made Sync Tap the one round where your mood was decoration, and it is no
+    // longer needed. Ties now split their combined placement slices, so a round where
+    // everyone happens to score the same pays them all the same average anyway - and
+    // where perks do separate them, the separation is meaningful instead of ignored.
+    for (let i = 0; i < pad.members.length; i++) scoreWithPerk(pad, i, 1)
+
     pad.syncTapAt = new Array<number>(pad.members.length).fill(0)
   }
 }
@@ -504,8 +579,14 @@ function judgeSyncTap(pad: PadRuntime, memberIndex: number, now: number): void {
 /**
  * Adds to a member's live score. RAW - no mood perk applied.
  *
- * Used for continuous accumulation (Hold Zones' held time), where applying a perk
- * like "give +1 to whoever is last" thirty times a second would break the game.
+ * Now used ONLY as the write primitive behind `scoreWithPerk`, which is how it should
+ * be: every point a player earns in every game goes through a perk. It used to be
+ * called directly for Hold Zones' continuous drip and for Sync Tap's flat credit, and
+ * those were exactly the two rounds where moods turned out to do nothing.
+ *
+ * Score anything new through `scoreWithPerk`. If a game genuinely cannot be expressed
+ * as discrete actions, give it an accumulator like `holdCredit` rather than reaching
+ * for this.
  */
 function bumpScore(pad: PadRuntime, memberIndex: number, amount: number): void {
   pad.memberScore[memberIndex] = (pad.memberScore[memberIndex] ?? 0) + amount
@@ -533,36 +614,88 @@ function scoreWithPerk(pad: PadRuntime, memberIndex: number, amount: number): vo
 
   bumpScore(pad, memberIndex, outcome.self)
 
+  // A gift may never lift its recipient ABOVE the player who gave it.
+  //
+  // This one rule is what keeps the generous moods playable, and it became essential
+  // once the prize for winning a round grew from 16 points to 30-54. Joy donates a point
+  // every time it scores, so in any round where the members act on the same schedule -
+  // Hold Zones credits every holder every 500ms, Sync Tap credits everyone on each sync -
+  // the donations were unopposed and the recipient overtook the donor. A Joy player
+  // holding the whole round finished on 14 against a partner's 27 and collected last
+  // place, in every symmetric round, with nothing they could do about it. Choosing the
+  // kind mood was a guaranteed loss.
+  //
+  // Capping at parity keeps the fantasy - a partner who is behind gets pulled level -
+  // while removing the self-harm. It also removes an ugly emergent bias: two players
+  // with the same mood used to leapfrog each other, and whoever sat earlier in the
+  // member array ended a point ahead and took the whole winner's prize.
+  // A gift may only close a gap, never reach parity: the recipient has to stay at least
+  // one point behind the giver. Capping at parity is NOT enough, because these loops walk
+  // members in array order over scores that are still mid-pass. A Joy player at index 0
+  // gives at a moment when their partner has not yet scored this pass, so a parity cap
+  // let the partner draw level and then take their own point, ending every single pass
+  // exactly one ahead. Requiring a real gap makes the outcome independent of who is
+  // processed first, which is also what stops two players of the SAME mood leapfrogging
+  // each other and handing the whole prize to whoever occupies the earlier array slot.
+  const giftCap = (recipient: number, amount: number): number => {
+    const mine = pad.memberScore[memberIndex] ?? 0
+    const theirs = pad.memberScore[recipient] ?? 0
+    return Math.max(0, Math.min(amount, mine - theirs - 1))
+  }
+
   // Feed the lowest-scoring ACTIVE member, excluding the scorer.
   //
-  // "Active" means they have scored at least once themselves this round. Without
-  // that filter a Joy player tapping 24 times in a Duo handed an idle partner 24
-  // points, a tied first place and the full placement bonus for doing nothing. A
-  // generous perk should help someone who is behind but trying, not carry a
-  // passenger.
+  // "Active" means they have scored RECENTLY, not merely at some point in the round.
+  // The weaker "ever scored once" test was enough while a round held a dozen scoring
+  // actions, but Hold Zones now holds about twenty: a partner who grabbed their zone for
+  // half a second and let go passed the test and was then fed all the way to a tied
+  // first place. That is precisely the passenger the filter was added to exclude.
   if (outcome.toLowest > 0 && pad.members.length > 1) {
     let lowestIndex = -1
     let lowest = Number.MAX_VALUE
     for (let i = 0; i < pad.members.length; i++) {
       if (i === memberIndex) continue
-      if ((pad.perkCounter[i] ?? 0) === 0) continue
+      if (!recentlyActive(pad, i)) continue
       const score = pad.memberScore[i] ?? 0
       if (score < lowest) {
         lowest = score
         lowestIndex = i
       }
     }
-    if (lowestIndex !== -1) bumpScore(pad, lowestIndex, outcome.toLowest)
+    if (lowestIndex !== -1) bumpScore(pad, lowestIndex, giftCap(lowestIndex, outcome.toLowest))
   }
 
-  // Feed every ACTIVE member except the scorer, same reasoning.
+  // Feed every ACTIVE member except the scorer, same reasoning and the same cap.
   if (outcome.toAll > 0) {
     for (let i = 0; i < pad.members.length; i++) {
       if (i === memberIndex) continue
-      if ((pad.perkCounter[i] ?? 0) === 0) continue
-      bumpScore(pad, i, outcome.toAll)
+      if (!recentlyActive(pad, i)) continue
+      bumpScore(pad, i, giftCap(i, outcome.toAll))
     }
   }
+}
+
+/**
+ * Whether a member is pulling their weight right now, for the purposes of a gift.
+ *
+ * Measured in SCORING ACTIONS rather than wall-clock time, so it means the same thing in
+ * a round with four actions as in one with thirty: a member counts as active while they
+ * are within `PERK_GIFT_ACTIVE_GAP` actions of the busiest member in the circle.
+ *
+ * A member who has never scored is never active, which is the original rule. What is new
+ * is that stopping also drops you, so a single touch early in a Hold Zones round no
+ * longer earns twenty intervals of charity.
+ */
+function recentlyActive(pad: PadRuntime, memberIndex: number): boolean {
+  const own = pad.perkCounter[memberIndex] ?? 0
+  if (own === 0) return false
+
+  let busiest = 0
+  for (let i = 0; i < pad.members.length; i++) {
+    busiest = Math.max(busiest, pad.perkCounter[i] ?? 0)
+  }
+
+  return busiest - own <= PERK_GIFT_ACTIVE_GAP
 }
 
 /**
@@ -573,10 +706,23 @@ function scoreWithPerk(pad: PadRuntime, memberIndex: number, amount: number): vo
  * the mini-game bonus while placement still rewards them for being fastest. That
  * keeps a slower player glad to be in the circle rather than resentful.
  */
-function judgeTapRace(pad: PadRuntime, memberIndex: number): void {
-  // Raw taps drive the objective; the perk-weighted score drives placement.
-  pad.taps[memberIndex] = (pad.taps[memberIndex] ?? 0) + 1
+function judgeTapRace(pad: PadRuntime, memberIndex: number, now: number): void {
+  // Raw taps drive the objective; the perk-weighted score orders everyone who did not
+  // reach it.
+  const taps = (pad.taps[memberIndex] ?? 0) + 1
+  pad.taps[memberIndex] = taps
   scoreWithPerk(pad, memberIndex, 1)
+
+  // Stamp the moment this member crossed the line, once. This is what makes the race a
+  // race: whoever gets here first is ranked first regardless of anybody's weighted
+  // score, so a mood perk can no longer hand the win to a player who tapped less.
+  //
+  // The round usually ends on this same tick, but not always - `objectiveMet` only
+  // needs SOMEBODY to finish, and on a tick where two taps arrive together both stamps
+  // land and the earlier one still wins.
+  if (taps >= TAP_RACE_TARGET && (pad.finishedAt[memberIndex] ?? 0) === 0) {
+    pad.finishedAt[memberIndex] = now
+  }
 }
 
 /** A random wait before the next Reaction cue. */
@@ -596,6 +742,17 @@ function nextCueDelay(): number {
  */
 function judgeReaction(pad: PadRuntime, memberIndex: number, now: number): void {
   if (!pad.cueLive) {
+    // A tap arriving just after somebody else claimed the cue is a LOST RACE, not a
+    // false start. The claim travels back to the other clients over the same network the
+    // tap came in on, so for one round-trip they are all still looking at a green plate
+    // in good faith. Punishing that tap - and the lockout survives into the next cue -
+    // meant losing a cue by 50ms silently cost you the one after it too.
+    //
+    // Forgiven only for a hair over one push interval, so it cannot be used to cover a
+    // genuine early tap.
+    const justClaimed = pad.cueClaimedAt > 0 && now - pad.cueClaimedAt <= CUE_GRACE_MS
+    if (justClaimed) return
+
     // Jumped the gun.
     if (pad.cueLockout.indexOf(memberIndex) === -1) {
       pad.cueLockout.push(memberIndex)
@@ -609,6 +766,17 @@ function judgeReaction(pad: PadRuntime, memberIndex: number, now: number): void 
   scoreWithPerk(pad, memberIndex, 1)
   pad.cuesDone++
   scheduleNextCue(pad, now)
+
+  // AFTER `scheduleNextCue`, which clears this - an abandoned cue must not leave a stale
+  // grace window behind, but a claimed one has to open a fresh one.
+  pad.cueClaimedAt = now
+
+  // Push immediately. Progress is otherwise throttled to PROGRESS_PUSH_MS, so for up to
+  // 150ms after a cue is claimed every OTHER client would still be showing a green
+  // plate for a cue that no longer exists - and a rival tapping it would be recorded as
+  // jumping the gun and locked out of the next cue as well. Losing a cue by a hair cost
+  // you the following one too, with nothing on screen to explain it.
+  writeProgress(pad, now, true)
 }
 
 /** Advances the Reaction cue schedule. Called from the playing tick. */
@@ -659,6 +827,7 @@ function tickReaction(pad: PadRuntime, now: number): void {
 function scheduleNextCue(pad: PadRuntime, now: number): void {
   pad.cueLive = false
   pad.cueLockout = []
+  pad.cueClaimedAt = 0
   pad.cueAt = pad.cuesDone >= REACTION_CUES ? 0 : now + nextCueDelay()
 }
 
@@ -938,14 +1107,18 @@ function startCountdown(pad: PadRuntime, members: PlayerRecord[], now: number): 
   pad.holdSeenAt = new Array<number>(pad.members.length).fill(0)
   pad.allHoldMs = 0
   pad.holdChainLive = false
+  pad.holdCredit = new Array<number>(pad.members.length).fill(0)
   pad.syncTapAt = new Array<number>(pad.members.length).fill(0)
+  pad.syncScoredPass = new Array<number>(pad.members.length).fill(-1)
   pad.syncs = 0
   pad.memberScore = new Array<number>(pad.members.length).fill(0)
   pad.perkCounter = new Array<number>(pad.members.length).fill(0)
+  pad.finishedAt = new Array<number>(pad.members.length).fill(0)
   pad.taps = new Array<number>(pad.members.length).fill(0)
   pad.cuesDone = 0
   pad.cueLive = false
   pad.cueLockout = []
+  pad.cueClaimedAt = 0
   // Reaction schedules its first cue relative to the start of play.
   pad.cueAt =
     pad.game === MiniGameKind.Reaction ? pad.startsAt + nextCueDelay() : 0
@@ -1056,11 +1229,24 @@ function tickPlaying(pad: PadRuntime, dtMs: number, now: number): void {
 
     pad.holdChainLive = everyoneHolding
 
-    // Individually, credit every member for the time THEY held, in tenths of a
-    // second. The group needs everyone, but the player who never lets go wins.
+    // Individually, credit every member for the time THEY held. The group needs
+    // everyone, but the player who never lets go wins.
+    //
+    // Credited in DISCRETE points, one per `HOLD_SCORE_INTERVAL_MS` of holding, rather
+    // than a fraction of a point per tick. That is not cosmetic: every mood perk is
+    // defined over discrete scoring actions ("every 2nd point counts double"), so while
+    // this game dripped `dtMs / 100` per tick there was no 2nd point for a perk to land
+    // on and no mood did anything here at all.
     for (let i = 0; i < pad.members.length; i++) {
-      if ((pad.holdMask & (1 << i)) !== 0) {
-        bumpScore(pad, i, dtMs / 100)
+      if ((pad.holdMask & (1 << i)) === 0) continue
+
+      pad.holdCredit[i] = (pad.holdCredit[i] ?? 0) + dtMs
+
+      // A while, not an if: a long frame can cover more than one interval, and dropping
+      // the remainder would quietly pay a laggy client less for the same hold.
+      while (pad.holdCredit[i] >= HOLD_SCORE_INTERVAL_MS) {
+        pad.holdCredit[i] -= HOLD_SCORE_INTERVAL_MS
+        scoreWithPerk(pad, i, 1)
       }
     }
   }
@@ -1101,14 +1287,19 @@ function resolvePad(pad: PadRuntime, now: number, success: boolean): void {
   // players.
   const members: PlayerRecord[] = []
   const scores: number[] = []
+  const finishedAt: number[] = []
   for (let i = 0; i < pad.members.length; i++) {
     const record = findMember(pad, i)
     if (!record) continue
     members.push(record)
     scores.push(Math.round(pad.memberScore[i] ?? 0))
+    // Parallel to `scores` for the same reason it is built here: a member who left
+    // mid-round must drop out of every array at once.
+    finishedAt.push(pad.finishedAt[i] ?? 0)
   }
 
-  pad.points = hooks?.award(members, success, pad.comboBonus > 0, pad.circleId, scores) ?? []
+  pad.points =
+    hooks?.award(members, success, pad.comboBonus > 0, pad.circleId, scores, finishedAt) ?? []
 
   for (const record of members) {
     record.activePad = -1
@@ -1159,15 +1350,19 @@ function resetPad(pad: PadRuntime): void {
   pad.holdSeenAt = []
   pad.allHoldMs = 0
   pad.holdChainLive = false
+  pad.holdCredit = []
   pad.syncTapAt = []
+  pad.syncScoredPass = []
   pad.syncs = 0
   pad.memberScore = []
   pad.perkCounter = []
+  pad.finishedAt = []
   pad.taps = []
   pad.cueAt = 0
   pad.cueLive = false
   pad.cuesDone = 0
   pad.cueLockout = []
+  pad.cueClaimedAt = 0
   pad.step = 0
   pad.stepMask = 0
   pad.comboId = ''
@@ -1207,9 +1402,12 @@ function dropMember(pad: PadRuntime, memberIndex: number): void {
   pad.holdMask = compactMask(pad.holdMask, memberIndex)
   pad.stepMask = compactMask(pad.stepMask, memberIndex)
   pad.holdSeenAt.splice(memberIndex, 1)
+  pad.holdCredit.splice(memberIndex, 1)
   pad.syncTapAt.splice(memberIndex, 1)
+  pad.syncScoredPass.splice(memberIndex, 1)
   pad.memberScore.splice(memberIndex, 1)
   pad.perkCounter.splice(memberIndex, 1)
+  pad.finishedAt.splice(memberIndex, 1)
   pad.taps.splice(memberIndex, 1)
   // Empty until resolve, so this is defensive rather than load-bearing - but keeping
   // every per-member array compacted uniformly means a future reader does not have to
@@ -1321,6 +1519,14 @@ function writeProgress(pad: PadRuntime, now: number, force: boolean): void {
   progress.success = pad.success
   progress.points = pad.points.slice()
   progress.memberScore = pad.memberScore.map((v) => Math.round(v))
+  // Only Tap Race needs the raw counts on the client, so nothing else pays for them.
+  progress.memberTaps = pad.game === MiniGameKind.TapRace ? pad.taps.slice() : []
+  // The ordering the payout will use, so the HUD never has to guess at it. Computed
+  // from the same inputs and the same function `award` runs at the end of the round.
+  progress.memberRank = rankMembers(
+    pad.memberScore.map((v) => Math.round(v)),
+    pad.finishedAt.slice()
+  ).ranks
   // Only ever the time of a cue that has ALREADY fired - see the schema comment.
   progress.cueAt = pad.cueLive ? pad.cueAt : 0
 }

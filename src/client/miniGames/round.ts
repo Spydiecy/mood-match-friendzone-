@@ -4,9 +4,12 @@
  * A mini-game panel should not care whether it is judging a real server-driven
  * circle or a local practice run, so both are projected into this one shape.
  *
- * IMPORTANT: `startsAt` / `endsAt` here are always in the LOCAL clock domain.
- * Server timestamps are converted on the way in, so every panel can just compare
- * against `Date.now()`.
+ * IMPORTANT: EVERY timestamp on a `RoundView` is in the LOCAL clock domain -
+ * `startsAt`, `endsAt` and `cueAt`. Server timestamps are converted on the way in, so
+ * every panel can just compare against `Date.now()`.
+ *
+ * "Every" is stated so emphatically because `cueAt` was the exception and it broke
+ * Reaction outright. See `toLocalCue` below.
  */
 
 import { COLOR_PALETTE_SIZE, MINIGAME_DURATION_MS } from '../../shared/config'
@@ -48,12 +51,53 @@ export interface RoundView {
   memberEmotions: EmotionId[]
   /** Live per-member performance, parallel to `members`. Drives the standings. */
   memberScore: number[]
-  /** Reaction: clock of an already-fired cue, or 0. */
+  /**
+   * Tap Race only: RAW taps per member, parallel to `members`. Empty for every other
+   * game.
+   *
+   * Tap Race must be shown in the units it is judged in. Use `raceCount` rather than
+   * reading this directly, so a missing array falls back gracefully.
+   */
+  memberTaps: number[]
+  /**
+   * Each member's current finishing position, zero-based, parallel to `members`.
+   *
+   * THE SERVER'S ordering, not a local guess. Read it through `isLeading` / `leaders`
+   * rather than comparing scores by hand - that is the mistake this field exists to
+   * make impossible.
+   */
+  memberRank: number[]
+  /**
+   * Reaction: LOCAL-clock time of an already-fired cue, or 0 when none is live.
+   *
+   * Local clock, like every other timestamp here. A real round only ever carries a
+   * cue that has already fired; a practice round schedules its own and so carries a
+   * future time.
+   */
   cueAt: number
   /** Local player's index in `members`, or 0 for practice. */
   myIndex: number
   /** True for a local, unscored practice run. */
   practice: boolean
+}
+
+/**
+ * Converts a published Reaction cue time into the local clock.
+ *
+ * THE BUG THIS FIXES: `cueAt` was the one timestamp handed to the panels without
+ * conversion, so `cueLive()` compared the local `Date.now()` against a SERVER
+ * timestamp. On a phone whose wall clock trails the server's, `now >= cueAt` stayed
+ * false for the whole round: the plate never turned green, nobody could claim a cue,
+ * and the round ran out at "You won 0". A player whose clock ran ahead got the mirror
+ * image - the plate was green before the cue fired.
+ *
+ * The zero guard is not optional. `cueAt` is 0 for "no cue is live", and
+ * `toLocalTime(0)` is `-offset`, which is a POSITIVE number whenever the server clock
+ * trails the client's. That would have satisfied `cueAt > 0 && now >= cueAt` and left
+ * the plate green for the entire round, which is the same bug wearing the opposite sign.
+ */
+function toLocalCue(cueAt: number): number {
+  return cueAt > 0 ? toLocalTime(cueAt) : 0
 }
 
 /** Projects a synced pad into a round view. */
@@ -73,7 +117,9 @@ export function roundFromPad(pad: PadView): RoundView {
     memberNames: pad.memberNames,
     memberEmotions: pad.memberEmotions,
     memberScore: pad.memberScore,
-    cueAt: pad.cueAt,
+    memberTaps: pad.memberTaps,
+    memberRank: pad.memberRank,
+    cueAt: toLocalCue(pad.cueAt),
     myIndex: Math.max(0, pad.myIndex),
     practice: false
   }
@@ -102,6 +148,10 @@ export function roundFromPractice(
     memberNames: ['You'],
     memberEmotions: [myEmotion],
     memberScore: [practice.memberScore],
+    // Solo, so there are no perks in play and the score IS the tap count.
+    memberTaps: [practice.memberScore],
+    // A field of one.
+    memberRank: [0],
     // Practice fires its own local cue.
     cueAt: practice.cueAt,
     myIndex: 0,
@@ -133,6 +183,25 @@ export function elapsedFraction(round: RoundView, now: number): number {
 
 /** Nominal round length, exposed so panels do not hardcode it. */
 export const ROUND_MS = MINIGAME_DURATION_MS
+
+/**
+ * True when the round produces individual placings worth showing.
+ *
+ * Every game does, now. Sync Tap used to be the exception - it credited every member
+ * the same raw point per sync, so ranking it would have been arbitrary - but its points
+ * go through each player's mood perk like everywhere else, so two players who sync the
+ * same four times can and should finish on different scores.
+ *
+ * Kept as a function rather than being deleted at the call sites because it is the
+ * honest name for what those call sites are asking, and a future game with genuinely
+ * shared scoring only has to be added here.
+ *
+ * Lives in this module, not the router, because `standings.tsx` needs it and the router
+ * imports `standings.tsx` - asking it the other way round would close an import cycle.
+ */
+export function isCompetitive(_game: MiniGameKind): boolean {
+  return true
+}
 
 /**
  * Builds the tap palette for Color Match.
@@ -175,3 +244,47 @@ export function colorPalette(sequence: EmotionId[]): EmotionId[] {
  * value itself lives where `check-logic` can assert it against the round length.
  */
 export { SEQUENCE_REVEAL_MS } from '../../shared/config'
+
+/**
+ * A member's progress in the units their round is actually judged in.
+ *
+ * Tap Race is the only game where this differs from `memberScore`, and the difference
+ * mattered: the panel used to draw every racer's bar as `memberScore / TAP_RACE_TARGET`
+ * while the target counted RAW taps, so an Energy player - whose score runs ahead of
+ * their taps - saw a full bar and then lost the race. Every other game's score and
+ * objective share a scale, so they fall through to `memberScore`.
+ */
+export function raceCount(round: RoundView, index: number): number {
+  if (round.game === MiniGameKind.TapRace) {
+    // Fall back to the score only if the raw array has not arrived yet, so the bars are
+    // never blank on the first frame of a round.
+    const taps = round.memberTaps[index]
+    if (typeof taps === 'number') return taps
+  }
+  return round.memberScore[index] ?? 0
+}
+
+/**
+ * Whether a member is currently in the lead, by the SERVER's ranking.
+ *
+ * Never derive this from `memberScore`. Tap Race ranks whoever crossed the target first
+ * ahead of any score, and ranks everyone else on their perk-weighted score, so the
+ * highest number on screen is not always the player in line for the winner's prize.
+ * The HUD used to compute the leader itself and could contradict the payout the player
+ * was about to be shown.
+ *
+ * Falls back to "nobody is leading" until the first progress push arrives, which is
+ * correct: at that point nobody has scored.
+ */
+export function isLeading(round: RoundView, index: number): boolean {
+  if (round.memberRank.length !== round.members.length) return false
+  if ((round.memberScore[index] ?? 0) <= 0) return false
+  return round.memberRank[index] === 0
+}
+
+/** Indices of every member currently in the lead. Empty until somebody scores. */
+export function leaders(round: RoundView): number[] {
+  return round.members
+    .map((_unused, index) => index)
+    .filter((index) => isLeading(round, index))
+}

@@ -20,7 +20,10 @@ import {
   POINTS_COMBO,
   POINTS_MINIGAME,
   POINTS_PER_EXTRA_MEMBER,
-  STREAK_MAX_BONUS
+  MAX_CIRCLE_PLAYERS,
+  PLACEMENT_LAST,
+  STREAK_MAX_BONUS,
+  winnerPrize
 } from '../../shared/config'
 import { EMOTIONS } from '../../shared/emotions'
 import { state } from '../state'
@@ -161,7 +164,9 @@ function StepScore() {
     <UiEntity
       uiTransform={{
         width: '100%',
-        height: 300,
+        // Seven rows at ~32 each, plus the title and a two-line paragraph. Was 300,
+        // which was already a shade tight before the placement line was added.
+        height: 352,
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center'
@@ -173,6 +178,16 @@ function StepScore() {
       <ScoreLine label="Each player beyond two" value={`+${POINTS_PER_EXTRA_MEMBER}`} />
       <ScoreLine label="Matching mood combo" value={`+${POINTS_COMBO}`} />
       <ScoreLine label="Clear the mini-game" value={`+${POINTS_MINIGAME}`} />
+      {/*
+        The biggest single line on this table, and it was missing entirely - a new player
+        had no way to know that winning the round is worth more than everything else put
+        together. Quoted as a range because the prize scales with the circle: beating
+        three people pays more than beating one.
+      */}
+      <ScoreLine
+        label="Win the round"
+        value={`+${winnerPrize(MIN_CIRCLE_PLAYERS)} to +${winnerPrize(MAX_CIRCLE_PLAYERS)}`}
+      />
       <ScoreLine label="Holding the featured mood" value={`x${FEATURED_MULTIPLIER}`} />
       <ScoreLine
         label="Daily streak"
@@ -180,7 +195,7 @@ function StepScore() {
       />
 
       <Paragraph
-        value="Scores persist on a shared leaderboard. One mood is featured each day, and five wins with a mood unlocks its skin."
+        value={`Last place still earns +${PLACEMENT_LAST}, and a tie splits the prize. Scores persist on a shared leaderboard, one mood is featured each day, and five wins with a mood unlocks its skin.`}
         lines={2}
         width={840}
         marginBottom={0}

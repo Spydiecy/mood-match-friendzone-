@@ -89,7 +89,10 @@ export const MOOD_PERKS: Record<EmotionId, MoodPerk> = {
   [EmotionId.Joy]: {
     id: 'contagious',
     name: 'Contagious',
-    blurb: 'Every point you score also gives +1 to whoever is last.',
+    // Says "catches up", not "overtakes you", because the gift is capped one point short
+    // of parity. Promising a straight transfer would be a lie in the player's favour and
+    // then a nasty surprise: uncapped, this perk made its own owner finish last.
+    blurb: 'Each point you score helps whoever is last catch up.',
     toleranceMultiplier: 1,
     generous: true
   },
@@ -110,7 +113,7 @@ export const MOOD_PERKS: Record<EmotionId, MoodPerk> = {
   [EmotionId.Love]: {
     id: 'bond',
     name: 'Bond',
-    blurb: `Every ${LOVE_EVERY}th point you score gives +1 to everyone else.`,
+    blurb: `Every ${LOVE_EVERY}th point helps everyone behind you catch up.`,
     toleranceMultiplier: 1,
     generous: true
   },
@@ -167,9 +170,16 @@ export interface PerkOutcome {
  * (so the first action is 1), and `roll` is a 0..1 random supplied by the caller -
  * both so this can be tested exhaustively rather than probabilistically.
  *
- * Only ever called for DISCRETE scoring events (a tap, a step, a cue). Continuous
- * accumulation like Hold Zones' held-time deliberately bypasses perks: applying
- * "give +1 to whoever is last" thirty times a second would break the game.
+ * Only ever called for DISCRETE scoring events (a tap, a step, a cue). That is a hard
+ * requirement, not a preference: every perk here is defined over a COUNT of actions, so
+ * "every 2nd point counts double" is meaningless against a continuously accumulating
+ * quantity, and calling this thirty times a second would apply "give +1 to whoever is
+ * last" thirty times a second.
+ *
+ * A continuous game therefore has to be converted into discrete actions rather than
+ * skipping the perk system. Hold Zones' held time used to bypass this entirely, which
+ * silently made every mood decoration for that whole round; it now banks time into an
+ * accumulator and calls in once per `HOLD_SCORE_INTERVAL_MS`.
  */
 export function applyMoodPerk(
   emotion: EmotionId | number,

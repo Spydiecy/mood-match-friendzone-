@@ -29,11 +29,11 @@ import { EMOTION_COUNT, EmotionId } from '../src/shared/types'
 import {
   CURIOSITY_CHANCE,
   CURIOSITY_MULTIPLIER,
+  LOVE_EVERY,
   ENERGY_EVERY,
   ENERGY_MULTIPLIER,
   FOCUS_EVERY,
   FOCUS_MULTIPLIER,
-  LOVE_EVERY,
   MOOD_PERKS,
   applyMoodPerk,
   describeMoodBalance,
@@ -44,9 +44,11 @@ import {
   COLOR_MISTAKE_SETBACK,
   COLOR_PALETTE_SIZE,
   COLOR_SEQUENCE_LENGTH,
+  CUE_GRACE_MS,
   FEATURED_MULTIPLIER,
   HOLD_BREAK_PENALTY_MS,
   HOLD_REQUIRED_MS,
+  HOLD_SCORE_INTERVAL_MS,
   MAX_CIRCLE_PLAYERS,
   MINIGAME_DURATION_MS,
   MIN_CIRCLE_PLAYERS,
@@ -55,10 +57,13 @@ import {
   POINTS_BASE,
   POINTS_COMBO,
   POINTS_MINIGAME,
-  PLACEMENT_BONUSES,
+  PLACEMENT_LAST,
+  PLACEMENT_WIN_BASE,
   POINTS_PER_EXTRA_MEMBER,
+  PROGRESS_PUSH_MS,
   REACTION_CUES,
   REACTION_MAX_DELAY_MS,
+  REACTION_MIN_DELAY_MS,
   RHYTHM_BEAT_MIN_MS,
   RHYTHM_BEAT_MS,
   RHYTHM_SUCCESS_RATIO,
@@ -72,6 +77,8 @@ import {
   TAP_RACE_TARGET,
   STREAK_MAX_BONUS,
   placementBonus,
+  placementSlice,
+  winnerPrize,
   requiredForPad
 } from '../src/shared/config'
 import {
@@ -81,7 +88,7 @@ import {
   currentInterval,
   nearestBeat
 } from '../src/shared/rhythm'
-import { markerInZone, markerPosition, sweepPeriod } from '../src/shared/syncTap'
+import { markerInZone, markerPosition, sweepPeriod, zonePass } from '../src/shared/syncTap'
 import { EMOTION_COUNT as EMOTIONS_AVAILABLE } from '../src/shared/types'
 
 let failures = 0
@@ -272,7 +279,7 @@ const duoCeiling = computeScore({
   finishRank: 0,
   topScore: 1
 })
-check('duo ceiling', duoCeiling.total, Math.round((10 + 20 + 30 + 0 + PLACEMENT_BONUSES[0]) * 2 * 1.5))
+check('duo ceiling', duoCeiling.total, Math.round((10 + 20 + 30 + 0 + winnerPrize(2)) * 2 * 1.5))
 check('maxPossibleScore agrees (duo)', maxPossibleScore(11, 2), duoCeiling.total)
 
 // Squad ceiling: (10 + 20 + 30 + 10) * 2 * 1.5 = 210.
@@ -286,7 +293,7 @@ const squadCeiling = computeScore({
   finishRank: 0,
   topScore: 1
 })
-check('squad ceiling', squadCeiling.total, Math.round((10 + 20 + 30 + 10 + PLACEMENT_BONUSES[0]) * 2 * 1.5))
+check('squad ceiling', squadCeiling.total, Math.round((10 + 20 + 30 + 10 + winnerPrize(4)) * 2 * 1.5))
 check('maxPossibleScore agrees (squad)', maxPossibleScore(11, 4), squadCeiling.total)
 checkTrue('a bigger circle always pays more', squadCeiling.total > duoCeiling.total)
 
@@ -528,11 +535,13 @@ checkTrue(
   tapsPerSecondNeeded <= 4
 )
 
-// There must be a placement bonus defined for every seat in the biggest circle.
-checkTrue(
-  'a placement bonus exists for every seat',
-  PLACEMENT_BONUSES.length >= MAX_CIRCLE_PLAYERS
-)
+// Every seat in the biggest circle must be worth something.
+for (let seat = 0; seat < MAX_CIRCLE_PLAYERS; seat++) {
+  checkTrue(
+    `seat ${seat} of a full circle pays something`,
+    placementSlice(seat, MAX_CIRCLE_PLAYERS) > 0
+  )
+}
 
 /* -------------------------------------------------------------------------- */
 /* Placement gating                                                          */
@@ -801,12 +810,425 @@ checkTrue(
   beatCount() * BEAT_DOT_PITCH <= 780
 )
 
+// Panel heights against the centre-stage budget. Every mini-game panel declares a
+// fixed height and the centre column allows 372; a panel that overruns pushes the
+// action row off the bottom of a phone screen, which is unrecoverable mid-round.
+// Sync Tap grew from 196 to 250 when the standings strip was added to it.
+const CENTRE_MAX = 372
+const PANEL_HEIGHTS: ReadonlyArray<readonly [string, number]> = [
+  ['rhythm tap', 264],
+  ['color match', 246],
+  ['sync tap', 250],
+  ['hold zones', 230],
+  ['tap race', 204],
+  ['reaction', 196]
+]
+for (const [name, height] of PANEL_HEIGHTS) {
+  checkTrue(`the ${name} panel fits the centre budget (${height} of ${CENTRE_MAX})`, height <= CENTRE_MAX)
+}
+
+// The tutorial's scoring table gained a row for the placement prize, which is now the
+// biggest single line on it. The modal caps itself at the canvas height, so the table
+// plus the header and the button row has to fit inside that cap - otherwise the Next
+// button ends up off screen and a first-time player is stuck in onboarding.
+const CANVAS_HEIGHT = 720
+const MODAL_MARGIN = 32
+const MODAL_PADDING = 22
+const MODAL_HEADER = 72
+const TUTORIAL_BUTTON_ROW = 96 + 14
+const SCORE_TABLE_HEIGHT = 352
+const tutorialHeight =
+  MODAL_PADDING * 2 + MODAL_HEADER + SCORE_TABLE_HEIGHT + TUTORIAL_BUTTON_ROW
+checkTrue(
+  `the tutorial scoring screen fits the modal (${tutorialHeight} of ${CANVAS_HEIGHT - MODAL_MARGIN})`,
+  tutorialHeight <= CANVAS_HEIGHT - MODAL_MARGIN
+)
+
 // Color Match draws one swatch per sequence step in the centre panel.
 const SEQUENCE_SWATCH_PITCH = 54 + 4 * 2
 checkTrue(
   `the sequence strip fits the panel (${COLOR_SEQUENCE_LENGTH * SEQUENCE_SWATCH_PITCH} of 780)`,
   COLOR_SEQUENCE_LENGTH * SEQUENCE_SWATCH_PITCH <= 780
 )
+
+/* -------------------------------------------------------------------------- */
+/* Ranking                                                                    */
+/* -------------------------------------------------------------------------- */
+
+// `rankMembers` decides who is paid what in every round, and it was imported here
+// without a single check against it. These pin the three rules it encodes.
+
+// 1. Plain ordering, best score first, and nobody is tied on their own.
+const plain = rankMembers([5, 9, 1])
+check('ranks order by score, best first', plain.ranks, [1, 0, 2])
+check('distinct scores are each alone at their rank', plain.tied, [1, 1, 1])
+
+// 2. Equal results SHARE a rank and report how many share it, so the caller can split
+//    the prize rather than paying each of them in full.
+const drawn = rankMembers([7, 7, 3])
+check('equal scores share a rank', drawn.ranks, [0, 0, 2])
+check('a shared rank reports its size', drawn.tied, [2, 2, 1])
+
+const allDrawn = rankMembers([4, 4, 4, 4])
+check('an all-square round ties everyone at first', allDrawn.ranks, [0, 0, 0, 0])
+check('an all-square round reports the full size', allDrawn.tied, [4, 4, 4, 4])
+
+// 3. Completing the objective OUTRANKS the score, and among finishers the earlier one
+//    wins. This is the Tap Race fix: a mood perk inflates `memberScore`, so without
+//    this an Energy player on 24 taps could score 36 and be ranked above the player who
+//    actually crossed 30 taps first and won the race for the group.
+const raced = rankMembers([36, 30], [0, 1000])
+check('the player who finished outranks a higher score', raced.ranks, [1, 0])
+check('a finish is not a tie', raced.tied, [1, 1])
+
+const photoFinish = rankMembers([30, 30], [1200, 1000])
+check('the earlier finisher takes first', photoFinish.ranks, [1, 0])
+
+const bothMissed = rankMembers([12, 20], [0, 0])
+check('with nobody finishing it falls back to score', bothMissed.ranks, [1, 0])
+
+// A dead heat on the exact same tick is still a dead heat.
+check('identical finish times stay tied', rankMembers([30, 30], [900, 900]).ranks, [0, 0])
+check('identical finish times report the tie', rankMembers([30, 30], [900, 900]).tied, [2, 2])
+
+// A DEAD HEAT MUST NOT FALL BACK TO THE SCORE. Two racers who each land their final tap
+// in the same millisecond hold the same raw count but different perk-weighted scores, so
+// deferring to the score would let the mood decide the photo finish - the exact key the
+// finish stamp exists to override. Identical stamps are the common case, not an exotic
+// one: `Date.now()` is read per message and a batch handled in one turn shares a ms.
+check(
+  'a dead heat ignores the weighted score',
+  rankMembers([45, 30], [1000, 1000]).ranks,
+  [0, 0]
+)
+check(
+  'a dead heat is reported as a tie',
+  rankMembers([45, 30], [1000, 1000]).tied,
+  [2, 2]
+)
+// ...but a real gap in the stamps still decides it, whichever way the scores point.
+check('a later finisher loses despite a higher score', rankMembers([45, 30], [1200, 1000]).ranks, [1, 0])
+
+/* -------------------------------------------------------------------------- */
+/* Placement ladder                                                           */
+/* -------------------------------------------------------------------------- */
+
+// Winning has to be worth chasing. The old fixed [16, 9, 5, 2] table paid a duo winner
+// 46 and the loser 39 - a seven-point gap on a 46-point round, most of which was the
+// shared base and combo. Two players reported that winning felt pointless.
+
+check('a duo winner takes the base prize', placementSlice(0, 2), PLACEMENT_WIN_BASE)
+check('last place is the same whatever the size', placementSlice(1, 2), PLACEMENT_LAST)
+check('last place in a squad is the same', placementSlice(3, 4), PLACEMENT_LAST)
+
+// The prize scales with the circle: beating three people beats beating one.
+checkTrue(
+  `a trio winner beats a duo winner (${winnerPrize(3)} vs ${winnerPrize(2)})`,
+  winnerPrize(3) > winnerPrize(2)
+)
+checkTrue(
+  `a squad winner beats a trio winner (${winnerPrize(4)} vs ${winnerPrize(3)})`,
+  winnerPrize(4) > winnerPrize(3)
+)
+
+// Every position must be worth climbing out of, or the middle of a squad has nothing
+// to play for.
+for (let members = 2; members <= MAX_CIRCLE_PLAYERS; members++) {
+  for (let rank = 1; rank < members; rank++) {
+    checkTrue(
+      `rank ${rank} of ${members} pays less than rank ${rank - 1}`,
+      placementSlice(rank, members) < placementSlice(rank - 1, members)
+    )
+  }
+  checkTrue(`last place in a circle of ${members} still pays`, placementSlice(members - 1, members) > 0)
+}
+
+// A solo pseudo-circle has nobody to beat.
+check('placement needs somebody to beat', placementBonus(0, 1, 1), 0)
+
+// Ties SPLIT their slices rather than each taking the higher one. Paying both players
+// a winner's share was the other half of "nothing is competitive": a dead heat was as
+// good as a win, so in Tap Race - where two players often end level - there was no
+// reason to be first.
+check('a duo tie splits the pot', placementBonus(0, 2, 2), Math.round((30 + 4) / 2))
+checkTrue(
+  'a tie pays less than an outright win',
+  placementBonus(0, 2, 2) < placementBonus(0, 2, 1)
+)
+checkTrue(
+  'a tie for first still beats coming last',
+  placementBonus(0, 2, 2) > placementBonus(1, 2, 1)
+)
+
+// Sync Tap credits every member for every sync, so a round where perks happen not to
+// separate anybody ties the whole circle at first. That must pay the ladder average,
+// not four winner's shares.
+const syncTie = placementBonus(0, 4, 4)
+const ladderAverage = Math.round(
+  (placementSlice(0, 4) + placementSlice(1, 4) + placementSlice(2, 4) + placementSlice(3, 4)) / 4
+)
+check('an all-square squad splits the whole ladder', syncTie, ladderAverage)
+checkTrue('an all-square round pays less than winning it', syncTie < placementSlice(0, 4))
+checkTrue('an all-square round pays more than losing it', syncTie > placementSlice(3, 4))
+
+// A tie can never pay out more in total than the positions it covers.
+for (let members = 2; members <= MAX_CIRCLE_PLAYERS; members++) {
+  for (let tied = 1; tied <= members; tied++) {
+    let ladder = 0
+    for (let i = 0; i < tied; i++) ladder += placementSlice(i, members)
+    checkTrue(
+      `a ${tied}-way tie in a circle of ${members} pays out no more than its slices`,
+      placementBonus(0, members, tied) * tied <= ladder + tied
+    )
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Perk gifts: the generous moods must stay playable                          */
+/* -------------------------------------------------------------------------- */
+
+// A gift may never lift its recipient ABOVE the giver. This became essential when the
+// winner's prize grew from 16 to 30-54: Joy donates a point every time it scores, so in
+// any round where members act on the same schedule - Hold Zones credits every holder
+// every 500ms, Sync Tap credits everyone on each sync - the donations were unopposed and
+// the recipient overtook the donor. A Joy player who held the entire round finished on 14
+// against a partner's 27 and collected LAST place, every time, with no play available to
+// them that changed it. Choosing the kind mood was a guaranteed loss.
+//
+// The server applies the cap; this models it so the property is pinned somewhere.
+function simulateGifts(
+  moods: EmotionId[],
+  actionsEach: number,
+  capped: boolean
+): number[] {
+  const scores = new Array<number>(moods.length).fill(0)
+  const counters = new Array<number>(moods.length).fill(0)
+
+  for (let action = 0; action < actionsEach; action++) {
+    for (let i = 0; i < moods.length; i++) {
+      counters[i]++
+      // Roll above the wildcard threshold, so Curiosity stays deterministic here.
+      const outcome = applyMoodPerk(moods[i], 1, counters[i], 0.999)
+      scores[i] += outcome.self
+
+      if (outcome.toLowest > 0 && moods.length > 1) {
+        let lowest = -1
+        for (let j = 0; j < moods.length; j++) {
+          if (j === i || counters[j] === 0) continue
+          if (lowest === -1 || scores[j] < scores[lowest]) lowest = j
+        }
+        if (lowest !== -1) {
+          const room = scores[i] - scores[lowest] - 1
+          scores[lowest] += capped
+            ? Math.max(0, Math.min(outcome.toLowest, room))
+            : outcome.toLowest
+        }
+      }
+
+      if (outcome.toAll > 0) {
+        for (let j = 0; j < moods.length; j++) {
+          if (j === i || counters[j] === 0) continue
+          const room = scores[i] - scores[j] - 1
+          scores[j] += capped ? Math.max(0, Math.min(outcome.toAll, room)) : outcome.toAll
+        }
+      }
+    }
+  }
+
+  return scores
+}
+
+// The regression, stated as a failing case under the OLD behaviour and a passing one
+// under the new. At Hold Zones' action count Joy used to lose outright.
+const holdActions = Math.floor(HOLD_REQUIRED_MS / HOLD_SCORE_INTERVAL_MS)
+const joyUncapped = simulateGifts([EmotionId.Joy, EmotionId.Calm], holdActions, false)
+checkTrue(
+  `without the cap Joy loses its own round (${joyUncapped[0]} vs ${joyUncapped[1]})`,
+  joyUncapped[0] < joyUncapped[1]
+)
+
+const joyCapped = simulateGifts([EmotionId.Joy, EmotionId.Calm], holdActions, true)
+checkTrue(
+  `with the cap Joy is never overtaken by its own gift (${joyCapped[0]} vs ${joyCapped[1]})`,
+  joyCapped[0] >= joyCapped[1]
+)
+
+// The same must hold for Love, which feeds everyone rather than the player in last.
+const loveCapped = simulateGifts([EmotionId.Love, EmotionId.Calm], holdActions, true)
+checkTrue(
+  `Love is never overtaken by its own gift (${loveCapped[0]} vs ${loveCapped[1]})`,
+  loveCapped[0] >= loveCapped[1]
+)
+
+// No generous mood may finish behind a mood that gives nothing away, across every
+// symmetric round length the games actually produce.
+for (const actions of [4, 6, 13, holdActions, 20, 30]) {
+  for (const generous of [EmotionId.Joy, EmotionId.Love]) {
+    const result = simulateGifts([generous, EmotionId.Calm], actions, true)
+    checkTrue(
+      `${getPerk(generous).id} is not punished at ${actions} actions (${result[0]} vs ${result[1]})`,
+      result[0] >= result[1]
+    )
+  }
+}
+
+// TWO IDENTICAL PLAYERS MUST TIE. Gifts are applied in member-array order against
+// mid-pass scores, so uncapped they leapfrogged each other and whoever sat earlier in
+// the array ended a point ahead - taking the entire winner's prize for occupying seat 0.
+// `rankMembers` was rewritten specifically to stop array order demoting anybody; without
+// the cap it came back one layer down, where the ranking could not see it.
+for (const mood of [EmotionId.Joy, EmotionId.Love, EmotionId.Calm, EmotionId.Energy]) {
+  const pair = simulateGifts([mood, mood], holdActions, true)
+  check(`two ${getPerk(mood).id} players tie exactly`, pair[0], pair[1])
+}
+
+// THE GIFT MUST STILL DO SOMETHING. Capping it could easily have turned the generous
+// moods back into decoration, which is the failure this whole area started with. A member
+// who is genuinely behind has to be pulled UP, visibly, in the standings strip everyone is
+// watching - that is the social payoff the mood is bought for.
+//
+// Modelled by giving the straggler a quarter of the actions.
+function simulateWithStraggler(mood: EmotionId, actionsEach: number): number[] {
+  const scores = [0, 0]
+  const counters = [0, 0]
+
+  for (let action = 0; action < actionsEach; action++) {
+    for (let i = 0; i < 2; i++) {
+      // The straggler only acts on every fourth pass.
+      if (i === 1 && action % 4 !== 0) continue
+
+      counters[i]++
+      const outcome = applyMoodPerk(i === 0 ? mood : EmotionId.Calm, 1, counters[i], 0.999)
+      scores[i] += outcome.self
+
+      const gift = Math.max(outcome.toLowest, outcome.toAll)
+      const other = 1 - i
+      if (gift > 0 && counters[other] > 0) {
+        const room = scores[i] - scores[other] - 1
+        scores[other] += Math.max(0, Math.min(gift, room))
+      }
+    }
+  }
+
+  return scores
+}
+
+const withJoy = simulateWithStraggler(EmotionId.Joy, holdActions)
+const withCalm = simulateWithStraggler(EmotionId.Calm, holdActions)
+
+checkTrue(
+  `contagious lifts a struggling partner (${withJoy[1]} vs ${withCalm[1]} without it)`,
+  withJoy[1] > withCalm[1]
+)
+checkTrue(
+  `contagious costs its owner nothing (${withJoy[0]} vs ${withCalm[0]})`,
+  withJoy[0] >= withCalm[0]
+)
+// The accepted consequence, pinned so it is a decision rather than a surprise: because
+// the gift stops one point short of parity it lifts a partner up the standings without
+// ever reordering them. A generous mood buys visible support for a struggling player, not
+// a placement swing - the compensation for choosing one is the shared mini-game bonus,
+// which the whole circle collects when the group objective lands.
+checkTrue(
+  'a lifted partner is still ranked below their benefactor',
+  withJoy[1] < withJoy[0]
+)
+
+/* -------------------------------------------------------------------------- */
+/* Sync Tap must involve playing                                              */
+/* -------------------------------------------------------------------------- */
+
+// Sync Tap used to credit each member only for COMPLETED group syncs, which is
+// `SYNC_TARGET` actions each - four - with nothing a player did changing their own total.
+// Placement was then a pure lookup by mood, and a 54-point prize should not be decided
+// before the round starts. Members are now also credited for landing an individual tap in
+// the zone, once per pass, so accuracy separates them.
+//
+// The number of passes available is what makes that worth doing, so pin it.
+const passesAvailable = (() => {
+  let passes = 0
+  let inside = false
+  for (let t = 0; t <= MINIGAME_DURATION_MS; t += 8) {
+    const now = markerInZone(0, t)
+    if (now && !inside) passes++
+    inside = now
+  }
+  return passes
+})()
+
+checkTrue(
+  `sync tap offers enough individual chances to separate players (${passesAvailable})`,
+  passesAvailable >= SYNC_TARGET * 2
+)
+
+// With that many actions the interval perks average toward their intended multipliers
+// instead of resolving to a fixed table. Four actions was not enough for Love's
+// every-4th or Focus's every-3rd to mean anything.
+checkTrue(
+  `sync tap clears every perk interval (${passesAvailable} vs ${LOVE_EVERY})`,
+  passesAvailable >= LOVE_EVERY * 2
+)
+
+// One pass, one point: `zonePass` is what stops a held button scoring per frame.
+check('a zone pass has a stable index', zonePass(0, 1000), zonePass(0, 1000))
+checkTrue('zone passes advance through the round', zonePass(0, MINIGAME_DURATION_MS) > zonePass(0, 0))
+let passesMonotonic = true
+let lastPass = zonePass(0, 0)
+for (let t = 0; t <= MINIGAME_DURATION_MS; t += 8) {
+  const pass = zonePass(0, t)
+  if (pass < lastPass) passesMonotonic = false
+  lastPass = pass
+}
+checkTrue('zone pass indices never go backwards', passesMonotonic)
+
+/* -------------------------------------------------------------------------- */
+/* Reaction: losing a race is not a false start                               */
+/* -------------------------------------------------------------------------- */
+
+// The early-tap lockout survives into the next cue on purpose, which makes it expensive
+// to hand out by accident. A claim has to travel back to the other clients, so for about
+// one round-trip they are all still looking at a green plate in good faith; a tap then is
+// a lost race. Without the grace window, losing a cue by 50ms silently cost the player
+// the NEXT cue too.
+checkTrue(
+  `the claim grace outlasts a progress push (${CUE_GRACE_MS}ms vs ${PROGRESS_PUSH_MS}ms)`,
+  CUE_GRACE_MS > PROGRESS_PUSH_MS
+)
+// ...but it must not be long enough to cover a genuine early tap, which means staying
+// well inside the shortest wait the server will ever schedule before a cue.
+checkTrue(
+  `the claim grace cannot hide a false start (${CUE_GRACE_MS}ms vs ${REACTION_MIN_DELAY_MS}ms)`,
+  CUE_GRACE_MS < REACTION_MIN_DELAY_MS
+)
+
+/* -------------------------------------------------------------------------- */
+/* The reported round, end to end                                             */
+/* -------------------------------------------------------------------------- */
+
+// Reproduces exactly what two players saw and complained about: a duo Hold Zones round
+// with a combo, which they failed, one of them ahead of the other. It paid 46 and 39.
+function reportedDuoRound(rank: number): number {
+  return computeScore({
+    comboMatched: true,
+    miniGameSuccess: false,
+    playerEmotion: Calm,
+    featuredEmotion: Joy,
+    streakDays: 1,
+    memberCount: 2,
+    finishRank: rank,
+    tiedAtRank: 1,
+    topScore: 12
+  }).total
+}
+
+const reportedWinner = reportedDuoRound(0)
+const reportedLoser = reportedDuoRound(1)
+
+checkTrue(
+  `winning the reported round pays meaningfully more (${reportedWinner} vs ${reportedLoser})`,
+  reportedWinner >= reportedLoser * 1.5
+)
+checkTrue(`the loser of the reported round still scores (${reportedLoser})`, reportedLoser > 0)
 
 /* -------------------------------------------------------------------------- */
 

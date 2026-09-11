@@ -175,6 +175,37 @@ export const HOLD_REQUIRED_MS = 7200
 export const HOLD_BREAK_PENALTY_MS = 400
 
 /**
+ * Hold Zones: how much time a member must hold to earn one scoring point.
+ *
+ * Hold Zones used to credit `dtMs / 100` per tick, which meant its score was a
+ * CONTINUOUS quantity - and every mood perk in the game is defined over DISCRETE
+ * actions ("every 2nd point counts double", "every 4th point gives +1 to everyone").
+ * A continuous drip has no 2nd or 4th point, so no perk did anything at all here: your
+ * mood was pure decoration for the whole round.
+ *
+ * Half a second gives about twenty scoring actions across a full hold, which is enough
+ * cycles for even Love's every-4th interval to fire several times.
+ */
+export const HOLD_SCORE_INTERVAL_MS = 500
+
+/** Perks ------------------------------------------------------------------ */
+
+/**
+ * How far behind the busiest member a player may fall and still receive perk gifts.
+ *
+ * The generous moods (Joy, Love) donate to members who are "active". Activity used to
+ * mean "has scored at least once this round", which was strong enough while a round held
+ * about a dozen scoring actions. Hold Zones now holds roughly twenty, and under the old
+ * test a partner who tapped their zone once in the first second stayed eligible for the
+ * remaining nineteen intervals - collecting enough charity to tie for first having
+ * played almost none of the round.
+ *
+ * Counted in scoring ACTIONS rather than milliseconds so the same number means the same
+ * thing in a four-action round and a thirty-action one.
+ */
+export const PERK_GIFT_ACTIVE_GAP = 4
+
+/**
  * Hold Zones: how often a holding client re-asserts its hold.
  *
  * `onMouseUp` can be missed if a thumb slides off the button, so a hold is a
@@ -280,22 +311,122 @@ export const REACTION_MAX_DELAY_MS = 1400
 export const CUE_EXPIRY_MS = 2500
 
 /**
- * Placement bonus by finishing position, best first.
+ * Reaction: how long after a cue is claimed a rival's tap is still forgiven.
+ *
+ * The claim has to travel back to the other clients, so for about one round-trip they
+ * are all still looking at a green plate in perfectly good faith. A tap in that window
+ * is a lost race, not a false start, and treating it as a false start was expensive:
+ * the early-tap lockout survives into the NEXT cue, so losing one cue by a hair silently
+ * cost the player the following cue too.
+ *
+ * Comfortably over one `PROGRESS_PUSH_MS`, since the server now forces a push the moment
+ * a cue is claimed, but short enough that it cannot hide a genuine early tap.
+ */
+export const CUE_GRACE_MS = 400
+
+/**
+ * Placement -------------------------------------------------------------------
  *
  * THIS IS WHAT MAKES A ROUND A GAME. Circles are cooperative to FORM - you cannot
- * play at all without other people - but inside a round players now compete, and
- * whoever performs best takes the biggest share. Purely shared outcomes gave
- * nobody a reason to try hard.
+ * play at all without other people - but inside a round players compete, and whoever
+ * performs best takes the biggest share. Purely shared outcomes gave nobody a reason
+ * to try hard.
  *
- * Everyone still gets something: last place is +2, not zero, so a beginner in a
- * circle with a regular is not humiliated and still wants another round.
+ * WHY THIS REPLACED A FIXED [16, 9, 5, 2] TABLE. Winning was worth almost nothing. A
+ * real duo round played out as 46 points for the winner and 39 for the loser: of that
+ * 46, thirty points were the shared base and combo, and the entire reward for winning
+ * was the 7-point gap between first and second. Two players reported it and both were
+ * right - there was no point in trying to win.
+ *
+ * Two things are fixed here.
+ *
+ * 1. The gap is now wide enough to chase. Winning a duo is worth `PLACEMENT_WIN_BASE`
+ *    against `PLACEMENT_LAST` for losing, so the same round becomes 60 against 34.
+ *
+ * 2. The prize SCALES WITH THE CIRCLE. Beating three people is a bigger achievement
+ *    than beating one, so a Squad winner takes more than a Duo winner. That also gives
+ *    the Trio and Squad pads a competitive reason to exist, not just a bigger
+ *    group-size bonus.
+ *
+ * Last place is still deliberately non-zero. A beginner dropped into a circle with a
+ * regular should not walk away with nothing, or they do not come back.
  */
-export const PLACEMENT_BONUSES: ReadonlyArray<number> = [16, 9, 5, 2]
 
-/** Placement bonus for a given zero-based rank. */
-export function placementBonus(rank: number): number {
+/** What the winner of a two-player circle takes. */
+export const PLACEMENT_WIN_BASE = 30
+
+/** Added to the winner's prize for each rival beyond the first. */
+export const PLACEMENT_WIN_PER_RIVAL = 12
+
+/** What the player in last place takes, whatever the circle size. */
+export const PLACEMENT_LAST = 4
+
+/**
+ * The winner's prize in a circle of `memberCount`.
+ *
+ * Duo 30, Trio 42, Squad 54.
+ */
+export function winnerPrize(memberCount: number): number {
+  const rivals = Math.max(1, Math.floor(memberCount) - 1)
+  return PLACEMENT_WIN_BASE + PLACEMENT_WIN_PER_RIVAL * (rivals - 1)
+}
+
+/**
+ * The prize attached to one finishing position, before ties are settled.
+ *
+ * A straight line from the winner's prize down to `PLACEMENT_LAST`. Linear rather than
+ * steep-at-the-top on purpose: every position has to be worth moving up from, or the
+ * players in the middle of a Squad have nothing to play for.
+ *
+ * Prefer `placementBonus`, which also handles ties. This is exported for the checks and
+ * for the "up to N points" preview.
+ */
+export function placementSlice(rank: number, memberCount: number): number {
+  const members = Math.floor(memberCount)
+  if (members <= 1) return 0
+
+  const winner = winnerPrize(members)
+  const clamped = Math.max(0, Math.min(Math.floor(rank), members - 1))
+  const step = (winner - PLACEMENT_LAST) / (members - 1)
+
+  return Math.round(winner - step * clamped)
+}
+
+/**
+ * Placement bonus for a finishing position, with tied players splitting their slices.
+ *
+ * `tiedCount` is how many members share this rank, including this one.
+ *
+ * TIES SPLIT THE POT rather than everyone taking the higher slice. That is the rule
+ * that makes a dead heat feel honest: two players who tie for first in a duo take
+ * (30 + 4) / 2 = 17 each, not 30 each. Paying both the winner's slice was the other
+ * half of "nothing is competitive" - a tie was as good as a win, so in Tap Race, where
+ * two players often end on the same score, there was no incentive to be first.
+ *
+ * It also means a round that genuinely ends level pays a fair middling amount with no
+ * special case anywhere, and gives no way for a round with no clear winner to pay
+ * everybody like a winner.
+ *
+ * ONE KNOWN ODDITY, accepted deliberately. Because a wide tie averages the whole ladder,
+ * an all-square Squad pays 29 while an outright second pays 37 - so a player who cannot
+ * win outright would rather be beaten cleanly than draw with everyone. Reaching that
+ * situation requires the other three to draw with you as well, so it is not something a
+ * player can engineer, and the alternatives (paying every tied player the top slice, or
+ * redistributing a fixed pot) each reintroduce a worse problem: the first makes a draw as
+ * good as a win, which is what this rule exists to stop.
+ */
+export function placementBonus(rank: number, memberCount: number, tiedCount = 1): number {
+  const members = Math.floor(memberCount)
+  if (members <= 1) return 0
   if (rank < 0) return 0
-  return PLACEMENT_BONUSES[Math.min(rank, PLACEMENT_BONUSES.length - 1)]
+
+  const first = Math.max(0, Math.min(Math.floor(rank), members - 1))
+  const shared = Math.max(1, Math.min(Math.floor(tiedCount), members - first))
+
+  let total = 0
+  for (let i = 0; i < shared; i++) total += placementSlice(first + i, members)
+
+  return Math.round(total / shared)
 }
 
 /** Scoring --------------------------------------------------------------- */

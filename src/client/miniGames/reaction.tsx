@@ -28,14 +28,26 @@ import { Standings } from './standings'
 /**
  * True when a cue is live and claimable right now.
  *
- * BOTH conditions are needed, and the time check is not redundant. A real round
- * publishes `cueAt` only AFTER the cue has fired, so `> 0` alone would be enough
- * there - but a PRACTICE round schedules its cue locally and so carries a FUTURE
- * timestamp. Checking only `> 0` therefore showed GO for the entire practice round,
- * making it unplayable. Comparing against the clock is correct for both.
+ * The two cases are deliberately NOT unified behind one clock comparison, because the
+ * two sources of `cueAt` mean different things.
+ *
+ * A REAL round publishes `cueAt` only after the cue has actually fired, so its mere
+ * presence is the signal - and comparing it against a clock is not just redundant, it
+ * is harmful. That comparison is what broke this round in the wild: `cueAt` reached the
+ * panel in the SERVER's clock domain, so on a phone whose wall clock trailed the
+ * server's, `now >= cueAt` never became true. The plate sat on WAIT for ten seconds,
+ * no cue could be claimed, and the round ended "You won 0". `cueAt` is converted to
+ * local time now, but this no longer leans on that conversion being accurate: for a
+ * live server round, published means fired.
+ *
+ * A PRACTICE round schedules its own cue locally and therefore carries a FUTURE
+ * timestamp, so it does need the clock check - without it the plate showed GO for the
+ * entire practice round.
  */
 function cueLive(round: RoundView, now: number): boolean {
-  return round.cueAt > 0 && now >= round.cueAt
+  if (round.cueAt <= 0) return false
+  if (!round.practice) return true
+  return now >= round.cueAt
 }
 
 /** The centre visual: a big WAIT / GO plate. */

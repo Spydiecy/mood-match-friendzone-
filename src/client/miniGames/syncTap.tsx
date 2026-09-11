@@ -14,6 +14,11 @@
  * It reliably makes people count down out loud, which is exactly the behaviour the
  * scene exists to produce.
  *
+ * Cooperative OBJECTIVE, competitive PAYOUT. Every member is credited for every sync,
+ * but through their own mood perk, so what a sync is worth still depends on the mood
+ * they brought. The credit used to be flat, which made this the one round where your
+ * mood did nothing - and it is why the standings strip appears here now.
+ *
  * The marker is drawn from `markerPosition` in `shared/syncTap.ts` - the same
  * function the server judges with - so the bar you see and the bar being judged can
  * never drift out of phase. Local clock offset is already corrected in `RoundView`.
@@ -27,6 +32,7 @@ import { COLORS, FONT, RADIUS, SPACE, TOUCH, emotionColor } from '../ui/theme'
 import { ProgressBar, Row, Text } from '../ui/widgets'
 import { RoundView, countdownSeconds, inCountdown, secondsLeft } from './round'
 import { inputTap } from './input'
+import { Standings } from './standings'
 
 /** Width of the sweep bar, in canvas units. */
 const BAR_WIDTH = 470
@@ -46,7 +52,9 @@ export function SyncTapPanel(props: { round: RoundView }) {
     <UiEntity
       uiTransform={{
         width: '100%',
-        height: 196,
+        // head 45 + bar 44 + pips 18 + standings 50 + bar 14 + caption 25, plus the
+        // margins between them. Grew from 196 when the standings strip was added.
+        height: 250,
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center'
@@ -120,6 +128,8 @@ export function SyncTapPanel(props: { round: RoundView }) {
           />
         ))}
       </Row>
+
+      <Standings round={round} />
 
       <UiEntity uiTransform={{ width: BAR_WIDTH, height: 14, margin: { top: SPACE.xs } }}>
         <ProgressBar value={round.progress} fill={COLORS.good} height={14} />

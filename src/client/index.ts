@@ -126,6 +126,7 @@ function registerHandlers(): void {
       groupSize: data.groupSize,
       placement: data.placement,
       finishRank: data.finishRank,
+      tiedAtRank: data.tiedAtRank,
       memberCount: data.memberCount,
       featuredMultiplier: data.featuredMultiplier,
       streakBonus: data.streakBonus,

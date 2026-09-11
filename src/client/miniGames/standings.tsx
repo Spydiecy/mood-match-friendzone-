@@ -9,40 +9,47 @@
  * A competitive round is only competitive if you can see the race. This strip shows
  * every member's live score with the leader marked, which is the difference between
  * "we all tapped a button" and "I'm one ahead, don't let up".
+ *
+ * The number shown is whatever the round is actually JUDGED on - `raceCount`. In Tap
+ * Race that is raw taps, not the perk-weighted score, because otherwise the strip
+ * showed a bar that had visibly filled up for a player who had not won.
+ *
+ * WHO is leading comes from the server's published ranking, not from comparing the
+ * numbers on screen. The two are not the same question in Tap Race: the displayed count
+ * is raw taps, while the ranking puts a player who crossed the target first above
+ * everyone regardless of count. Deriving the leader locally let the strip disagree with
+ * the payout.
  */
 
 import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
-import { MiniGameKind } from '../../shared/types'
 import { COLORS, FONT, RADIUS, SPACE, emotionColor } from '../ui/theme'
 import { Row, Text } from '../ui/widgets'
-import { RoundView } from './round'
-
-/** Sync Tap is the one round with no individual winner, by design. */
-function isTeamGame(game: MiniGameKind): boolean {
-  return game === MiniGameKind.SyncTap
-}
+import { RoundView, isCompetitive, isLeading, raceCount } from './round'
 
 /**
  * The standings strip.
  *
- * Renders nothing for a solo practice run or a team game - a leaderboard of one, or
- * of identical scores, is noise.
+ * Renders nothing for a solo practice run - a leaderboard of one is noise.
+ *
+ * It now renders for Sync Tap too. That round used to be excluded because it credited
+ * every member the same raw point, so the strip would have shown identical numbers;
+ * its points run through each player's mood perk now, so there is a real race to show.
  */
 export function Standings(props: { round: RoundView }) {
   const round = props.round
 
-  if (round.practice || round.members.length < 2 || isTeamGame(round.game)) {
+  if (round.practice || round.members.length < 2 || !isCompetitive(round.game)) {
     return <UiEntity uiTransform={{ width: 1, height: 1 }} />
   }
-
-  const best = round.memberScore.reduce((m, v) => Math.max(m, v), 0)
 
   return (
     <Row width="100%" justifyContent="center" marginTop={SPACE.xs}>
       {round.members.map((address, index) => {
-        const score = round.memberScore[index] ?? 0
-        // Only mark a leader once somebody is actually ahead.
-        const leading = best > 0 && score === best
+        const score = raceCount(round, index)
+        // The SERVER decides who is leading. Marking the highest number on screen was
+        // wrong for Tap Race, where the ranking puts whoever crossed the target first
+        // ahead of any score - the chip could crown a player the server had in second.
+        const leading = isLeading(round, index)
         const isMe = index === round.myIndex
 
         return (

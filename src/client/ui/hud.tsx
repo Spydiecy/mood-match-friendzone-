@@ -41,7 +41,7 @@ import {
   miniGameName
 } from '../miniGames'
 import { ordinal } from '../miniGames/standings'
-import { roundFromPad, roundFromPractice } from '../miniGames/round'
+import { leaders, raceCount, roundFromPad, roundFromPractice } from '../miniGames/round'
 import { practiceBest, startPractice, stopPractice } from '../practice'
 import { ComboPreview, StartingCard } from './startingCard'
 import { state } from '../state'
@@ -398,13 +398,18 @@ function RoundResult() {
 
   const mine = pad.myIndex >= 0 ? pad.points[pad.myIndex] ?? 0 : 0
 
-  // Who actually won the round, by mini-game performance.
-  const best = pad.memberScore.reduce((m, v) => Math.max(m, v), 0)
-  const winners = pad.memberScore
-    .map((score, index) => ({ score, index }))
-    .filter((entry) => best > 0 && entry.score === best)
-  const iWon = winners.some((w) => w.index === pad.myIndex)
-  const ranked = isCompetitive(pad.game) && pad.members.length > 1 && best > 0
+  // Who won, taken from the SERVER's ranking rather than worked out here.
+  //
+  // This line and the payout panel that follows it have to name the same player, and
+  // for a while they did not. Deriving the winner from the highest number went wrong in
+  // Tap Race twice over: the ranking puts whoever crossed the target first above
+  // everyone regardless of count, and when nobody reaches it the ranking falls back to
+  // the perk-weighted score while the bars on screen show raw taps. A player could be
+  // announced as the winner here and then read "Finished 2nd" a moment later.
+  const resultRound = roundFromPad(pad)
+  const winners = leaders(resultRound)
+  const iWon = winners.indexOf(pad.myIndex) !== -1
+  const ranked = isCompetitive(pad.game) && pad.members.length > 1 && winners.length > 0
 
   return (
     <Panel
@@ -437,7 +442,7 @@ function RoundResult() {
               ? winners.length > 1
                 ? 'Joint winner'
                 : 'You won the round'
-              : `${trimWinner(pad.memberNames[winners[0]?.index ?? 0] ?? 'Someone')} won it`
+              : `${trimWinner(pad.memberNames[winners[0] ?? 0] ?? 'Someone')} won it`
           }
           fontSize={FONT.heading}
           color={iWon ? COLORS.good : COLORS.textDim}
@@ -467,10 +472,10 @@ function RoundResult() {
           >
             <EmotionBadge emotion={pad.memberEmotions[index] ?? 0} size={38} />
             <Text
-              value={ranked ? String(pad.memberScore[index] ?? 0) : ''}
+              value={ranked ? String(raceCount(resultRound, index)) : ''}
               fontSize={FONT.tiny}
               color={
-                ranked && (pad.memberScore[index] ?? 0) === best ? COLORS.good : COLORS.textDim
+                ranked && winners.indexOf(index) !== -1 ? COLORS.good : COLORS.textDim
               }
             />
           </UiEntity>
@@ -553,7 +558,14 @@ function PayoutPanel() {
       )}
       {payout.placement > 0 && (
         <PayoutLine
-          label={`Finished ${ordinal(payout.finishRank)} of ${payout.memberCount}`}
+          // "Joint" matters: tied players split their combined slices, so a two-way tie
+          // for first pays well under an outright win. Without the word, the line reads
+          // "Finished 1st of 2  +17" and looks like the prize was miscalculated.
+          label={
+            payout.tiedAtRank > 1
+              ? `Joint ${ordinal(payout.finishRank)} of ${payout.memberCount} - split`
+              : `Finished ${ordinal(payout.finishRank)} of ${payout.memberCount}`
+          }
           value={`+${payout.placement}`}
         />
       )}

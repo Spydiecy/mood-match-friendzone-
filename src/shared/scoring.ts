@@ -66,6 +66,14 @@ export interface ScoreInput {
    */
   finishRank: number
   /**
+   * How many members share `finishRank`, including this one. 1 for a clear position.
+   *
+   * Tied players split their combined slices, so a dead heat pays the average rather
+   * than paying everyone involved a winner's share. Defaults to 1 so a caller that
+   * genuinely has no ranking information still gets a sane number.
+   */
+  tiedAtRank?: number
+  /**
    * The highest mini-game score anyone in the circle achieved.
    *
    * Gates the placement bonus. `rankMembers` maps equal scores to the same rank, so a
@@ -102,7 +110,9 @@ export function computeScore(input: ScoreInput): ScoreBreakdown {
   const groupSize = groupSizeBonus(input.memberCount)
   // Placement needs somebody to beat AND somebody to have scored.
   const ranked = input.memberCount > 1 && input.topScore > 0
-  const placement = ranked ? placementBonus(input.finishRank) : 0
+  const placement = ranked
+    ? placementBonus(input.finishRank, input.memberCount, input.tiedAtRank ?? 1)
+    : 0
 
   const featuredMultiplier =
     input.playerEmotion === input.featuredEmotion ? FEATURED_MULTIPLIER : 1
@@ -125,16 +135,81 @@ export function computeScore(input: ScoreInput): ScoreBreakdown {
 }
 
 /**
- * Ranks circle members by mini-game performance, highest score first.
+ * Ranks circle members, best first, and reports how many share each rank.
  *
- * Returns a zero-based rank per member, parallel to the input. EQUAL SCORES SHARE A
- * RANK - two players who both scored 12 are both "1st" and both get the winner's
- * bonus, rather than one being arbitrarily demoted by array order. That matters for
- * Sync Tap, where every member scores identically by design.
+ * Returns a zero-based rank per member, parallel to the input. EQUAL RESULTS SHARE A
+ * RANK - two players who both scored 12 are both "1st" rather than one being
+ * arbitrarily demoted by array order. `tied` says how many members hold each rank, so
+ * the caller can split the prize between them instead of paying each of them a
+ * winner's share.
+ *
+ * `finishedAt` is the optional first-past-the-post tiebreak: the clock time at which
+ * each member completed the round's individual objective, or 0 for one who never did.
+ *
+ * IT OUTRANKS THE SCORE, and that ordering is the point. Tap Race counts RAW taps for
+ * its objective but ranks on the PERK-WEIGHTED score, so an Energy player on 24 taps
+ * could score 36 and finish above the Calm player who actually crossed 30 taps first
+ * and won the race for everybody. Worse, two players frequently landed on the same
+ * weighted score, which read as a dead heat in a game that had a clear winner. Whoever
+ * got there first now takes first, and the weighted score only orders the players who
+ * did not finish.
  */
-export function rankMembers(scores: number[]): number[] {
-  const sorted = scores.slice().sort((a, b) => b - a)
-  return scores.map((score) => sorted.indexOf(score))
+export function rankMembers(
+  scores: number[],
+  finishedAt?: number[]
+): { ranks: number[]; tied: number[] } {
+  const order = scores.map((_unused, index) => index)
+
+  order.sort((a, b) => compareMembers(scores, finishedAt, a, b))
+
+  const ranks = new Array<number>(scores.length).fill(0)
+  const counts = new Array<number>(scores.length).fill(0)
+
+  let rank = 0
+  for (let position = 0; position < order.length; position++) {
+    // Only demote when this member is genuinely behind the previous one. Equal results
+    // keep the rank they were first assigned.
+    if (
+      position > 0 &&
+      compareMembers(scores, finishedAt, order[position - 1], order[position]) !== 0
+    ) {
+      rank = position
+    }
+    ranks[order[position]] = rank
+    counts[rank]++
+  }
+
+  const tied = ranks.map((r) => counts[r])
+  return { ranks, tied }
+}
+
+/** Orders two members. Negative means `a` finished ahead of `b`. */
+function compareMembers(
+  scores: number[],
+  finishedAt: number[] | undefined,
+  a: number,
+  b: number
+): number {
+  const finishA = finishedAt?.[a] ?? 0
+  const finishB = finishedAt?.[b] ?? 0
+
+  // Completing the objective beats any score. Then, among those who completed it,
+  // earlier beats later - and an identical stamp is a genuine dead heat.
+  //
+  // Returning 0 for equal stamps matters more than it looks. Falling through to the
+  // score would decide a photo finish on exactly the key this tiebreak exists to
+  // override: two racers who each land their final tap in the same millisecond sit on
+  // the same RAW count, but their perk-weighted scores differ by mood, so an Energy
+  // player would take the win over a Calm player who tapped just as fast. Identical
+  // stamps are common rather than exotic - `Date.now()` is read per message and a batch
+  // of messages handled in one turn shares a millisecond.
+  if (finishA > 0 || finishB > 0) {
+    if (finishA > 0 && finishB === 0) return -1
+    if (finishB > 0 && finishA === 0) return 1
+    return finishA - finishB
+  }
+
+  return (scores[b] ?? 0) - (scores[a] ?? 0)
 }
 
 /** Bonus for each member beyond the minimum. Never negative. */
@@ -153,7 +228,8 @@ export function maxPossibleScore(streakDays: number, memberCount = MIN_CIRCLE_PL
       POINTS_COMBO +
       POINTS_MINIGAME +
       groupSizeBonus(memberCount) +
-      (memberCount > 1 ? placementBonus(0) : 0)) *
+      // Winning outright, so no tie to split.
+      (memberCount > 1 ? placementBonus(0, memberCount, 1) : 0)) *
       FEATURED_MULTIPLIER *
       (1 + streakBonusFor(streakDays))
   )

@@ -56,6 +56,8 @@ function blankPadView(padIndex: number): PadView {
     success: false,
     points: [],
     memberScore: [],
+    memberTaps: [],
+    memberRank: [],
     cueAt: 0,
     mine: false,
     myIndex: -1
@@ -175,6 +177,8 @@ export function refreshPadViews(): void {
     // Scores change every tick during a competitive round, so this is copied every
     // frame rather than gated on the roster token like the other arrays.
     view.memberScore = progress ? progress.memberScore.map((v) => v) : []
+    view.memberTaps = progress ? progress.memberTaps.map((v) => v) : []
+    view.memberRank = progress ? progress.memberRank.map((v) => v) : []
 
     // Points only matter once the round has resolved, so this array is copied at
     // most once per round rather than every frame.

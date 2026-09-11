@@ -141,6 +141,15 @@ export const MoodMessages = {
     placement: Schemas.Int,
     /** Zero-based finishing position, so the panel can say "1st of 3". */
     finishRank: Schemas.Int,
+    /**
+     * How many players shared this finishing position, including this one.
+     *
+     * Needed so the panel can say "Joint 1st" rather than a bare "1st". Tied players
+     * split their combined slices, so a two-way tie for first pays noticeably less than
+     * an outright win - and a line reading "Finished 1st of 2  +17" next to a rival's
+     * "+17" would look like a bug rather than a draw.
+     */
+    tiedAtRank: Schemas.Int,
     /** How many players were in the circle. */
     memberCount: Schemas.Int,
     featuredMultiplier: Schemas.Int,

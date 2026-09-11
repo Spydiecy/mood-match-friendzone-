@@ -24,14 +24,12 @@ import { REACTION_BRIEF, ReactionAction, ReactionPanel } from './reaction'
 import { RoundView } from './round'
 
 /**
- * True when the round has an individual winner.
+ * True when the round has individual placings.
  *
- * Sync Tap is the only round that does not: every member scores identically by
- * design, so ranking it would be arbitrary.
+ * Re-exported from `round.ts`, which is where it lives so `standings.tsx` can read it
+ * without importing this router back.
  */
-export function isCompetitive(game: MiniGameKind): boolean {
-  return game !== MiniGameKind.SyncTap
-}
+export { isCompetitive } from './round'
 
 /** Player-facing name of a mini-game. ASCII only. */
 export function miniGameName(game: MiniGameKind): string {

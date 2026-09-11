@@ -362,14 +362,20 @@ function award(
   success: boolean,
   comboMatched: boolean,
   circleId: number,
-  memberScores: number[]
+  memberScores: number[],
+  finishedAt: number[]
 ): number[] {
   const featuredEmotion = getFeaturedEmotion()
   const points: number[] = []
 
-  // Rank by mini-game performance. Ties share a rank, so nobody is demoted by
-  // array order.
-  const ranks = rankMembers(members.map((_, index) => memberScores[index] ?? 0))
+  // Rank by mini-game performance, with "who completed the objective first" taking
+  // precedence over the perk-weighted score. Ties share a rank, so nobody is demoted by
+  // array order - and `tied` lets the prize be split between them rather than paid to
+  // each of them in full.
+  const { ranks, tied } = rankMembers(
+    members.map((_, index) => memberScores[index] ?? 0),
+    members.map((_, index) => finishedAt[index] ?? 0)
+  )
   // Gates the placement bonus: a round nobody played pays nobody a winner's bonus.
   const topScore = memberScores.reduce((best, score) => Math.max(best, score), 0)
 
@@ -383,6 +389,7 @@ function award(
       streakDays: record.streakDays,
       memberCount: members.length,
       finishRank: ranks[index] ?? 0,
+      tiedAtRank: tied[index] ?? 1,
       topScore
     })
 
@@ -417,6 +424,7 @@ function award(
         groupSize: breakdown.groupSize,
         placement: breakdown.placement,
         finishRank: breakdown.rank,
+        tiedAtRank: tied[index] ?? 1,
         memberCount: members.length,
         featuredMultiplier: breakdown.featuredMultiplier,
         streakBonus: breakdown.streakBonus,
