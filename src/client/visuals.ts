@@ -29,7 +29,7 @@ import { Color3, Color4, Vector3 } from '@dcl/sdk/math'
 import { PAD_POSITIONS } from '../shared/config'
 import { getEmotion } from '../shared/emotions'
 import { CirclePhase } from '../shared/types'
-import { PAD_NAMES } from './circle'
+import { PAD_NAMES, PAD_WHERE, padFillFor } from './circle'
 import { state } from './state'
 import { emotionColor } from './ui/theme'
 
@@ -72,12 +72,8 @@ export function setupVisuals(): void {
     emitters: PAD_POSITIONS.map((position) => createEmitter(position))
   }
 
-  // Static labels never change, so write them once rather than every frame.
-  handles.padLabels.forEach((entity, index) => {
-    if (!entity) return
-    const text = TextShape.getMutableOrNull(entity)
-    if (text) text.text = PAD_NAMES[index]
-  })
+  // Labels are no longer static - they carry the live occupancy - so they are
+  // written by `updatePadLabels` on the throttled sign tick instead of once here.
 }
 
 /** Looks up a composite entity by name, returning null when absent. */
@@ -210,9 +206,68 @@ export function updateVisuals(now: number): void {
   updatePads(now)
   updateFontCrystal()
 
+  // Pad labels carry the live fill count, so they update faster than the other
+  // signs - a counter that lags a second feels broken when someone walks in.
+  updatePadLabels(now)
+
   if (now >= nextSignUpdate) {
     nextSignUpdate = now + SIGN_INTERVAL_MS
     updateSigns()
+  }
+}
+
+/** Last label text written per pad, so an unchanged label is not rewritten. */
+const lastLabelText: string[] = ['', '', '']
+
+/** Throttle for the pad labels. */
+let nextLabelUpdate = 0
+const LABEL_INTERVAL_MS = 250
+
+/**
+ * Writes "TIER - WHERE" and the live "n/required" above each pad.
+ *
+ * This is the in-world half of the fill indicator: a player crossing the plaza can
+ * read how full a ring is without opening any UI, which is what makes people walk
+ * toward each other in the first place.
+ */
+function updatePadLabels(now: number): void {
+  if (!handles) return
+  if (now < nextLabelUpdate) return
+  nextLabelUpdate = now + LABEL_INTERVAL_MS
+
+  for (let padIndex = 0; padIndex < handles.padLabels.length; padIndex++) {
+    const entity = handles.padLabels[padIndex]
+    if (!entity) continue
+
+    const view = state.pads[padIndex]
+    const fill = padFillFor(padIndex)
+    const tier = PAD_NAMES[padIndex].replace(' Pad', '').toUpperCase()
+
+    let body: string
+    if (view && view.phase === CirclePhase.Playing) {
+      body = 'IN PLAY'
+    } else if (view && view.phase === CirclePhase.Countdown) {
+      body = 'STARTING'
+    } else if (view && view.phase === CirclePhase.Result) {
+      body = view.success ? 'CLEARED' : 'DONE'
+    } else {
+      body = `${fill.here}/${fill.required}`
+    }
+
+    const text = `${tier} - ${PAD_WHERE[padIndex]}\n${body}`
+    if (lastLabelText[padIndex] === text) continue
+    lastLabelText[padIndex] = text
+
+    const shape = TextShape.getMutableOrNull(entity)
+    if (shape) {
+      shape.text = text
+      // Green once the ring is full enough to start, so "ready" is legible from
+      // across the plaza without reading the numbers.
+      shape.textColor =
+        fill.here >= fill.required
+          ? Color4.create(0.36, 0.87, 0.56, 1)
+          : Color4.create(1, 1, 1, 1)
+    }
   }
 }
 
@@ -235,12 +290,17 @@ function updatePads(now: number): void {
     let beaconHeight = 0.6
 
     switch (phase) {
-      case CirclePhase.Gathering:
-        // A pad with somebody waiting pulses, to pull other players over. This is
+      case CirclePhase.Gathering: {
+        // Brightness and beacon height scale with how FULL the ring is, so a pad
+        // that needs one more player is visibly hotter than an empty one. This is
         // the main in-world social signal in the scene.
-        intensity = memberCount > 0 ? 0.55 + pulse(now, 900) * 0.45 : 0.3
-        beaconHeight = memberCount > 0 ? 2.2 + pulse(now, 900) * 1.4 : 0.6
+        const required = view?.required ?? 2
+        const ratio = required > 0 ? Math.min(1, memberCount / required) : 0
+        intensity =
+          memberCount > 0 ? 0.4 + ratio * 0.35 + pulse(now, 900) * 0.25 : 0.28
+        beaconHeight = memberCount > 0 ? 1.6 + ratio * 3.2 + pulse(now, 900) * 1.0 : 0.6
         break
+      }
       case CirclePhase.Countdown:
         intensity = 0.7 + pulse(now, 320) * 0.3
         beaconHeight = 4.2

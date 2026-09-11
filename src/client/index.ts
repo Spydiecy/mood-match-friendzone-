@@ -123,6 +123,7 @@ function registerHandlers(): void {
       base: data.base,
       combo: data.combo,
       miniGame: data.miniGame,
+      groupSize: data.groupSize,
       featuredMultiplier: data.featuredMultiplier,
       streakBonus: data.streakBonus,
       total: data.total,

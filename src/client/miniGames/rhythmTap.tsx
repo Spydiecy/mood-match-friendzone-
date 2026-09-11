@@ -17,7 +17,7 @@ import { COLORS, FONT, GLOW, RADIUS, SPACE, TOUCH, emotionColor } from '../ui/th
 import { ProgressBar, Row, Text } from '../ui/widgets'
 import { RoundView, countdownSeconds, inCountdown, secondsLeft } from './round'
 import { inputTap } from './input'
-import { currentVerdict, flashIntensity, tapStreak } from './tapFeel'
+import { BeatMark, beatHistory, currentVerdict, flashIntensity, tapStreak } from './tapFeel'
 
 /** Beats in a full round. */
 function beatCount(round: RoundView): number {
@@ -131,6 +131,26 @@ export function RhythmTapPanel(props: { round: RoundView }) {
         />
       </Row>
 
+      {/*
+        Per-beat history. Shows the SHAPE of the run, not just a total: a player can
+        see that they land the first three and drift on the fourth, which a single
+        counter cannot tell them.
+      */}
+      <Row width="100%" justifyContent="center" marginTop={SPACE.xs}>
+        {beatHistory(round, now).map((mark, index) => (
+          <UiEntity
+            key={`beat-${index}`}
+            uiTransform={{
+              width: mark === 'current' ? 16 : 12,
+              height: mark === 'current' ? 16 : 12,
+              borderRadius: RADIUS.pill,
+              margin: { left: 3, right: 3 }
+            }}
+            uiBackground={{ color: beatColor(mark, ringColor) }}
+          />
+        ))}
+      </Row>
+
       <UiEntity uiTransform={{ width: 470, height: 14, margin: { top: SPACE.xs } }}>
         <ProgressBar value={round.progress} fill={ringColor} height={14} />
       </UiEntity>
@@ -198,6 +218,14 @@ export function RhythmTapAction(props: { round: RoundView }) {
       />
     </UiEntity>
   )
+}
+
+/** Colour for one beat dot. */
+function beatColor(mark: BeatMark, accent: Color4): Color4 {
+  if (mark === 'hit') return COLORS.good
+  if (mark === 'missed') return Color4.create(0.32, 0.34, 0.44, 1)
+  if (mark === 'current') return accent
+  return COLORS.chip
 }
 
 /** One-line explanation, shown during the countdown and in the tutorial. */

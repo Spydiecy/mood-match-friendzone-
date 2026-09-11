@@ -18,14 +18,24 @@ import {
   isSkinUnlocked,
   withSkinUnlocked
 } from '../src/shared/emotions'
-import { computeScore, maxPossibleScore, streakBonusFor } from '../src/shared/scoring'
+import {
+  computeScore,
+  groupSizeBonus,
+  maxPossibleScore,
+  streakBonusFor
+} from '../src/shared/scoring'
 import { EMOTION_COUNT, EmotionId } from '../src/shared/types'
 import {
   FEATURED_MULTIPLIER,
+  MAX_CIRCLE_PLAYERS,
+  MIN_CIRCLE_PLAYERS,
+  PAD_TIERS,
   POINTS_BASE,
   POINTS_COMBO,
   POINTS_MINIGAME,
-  STREAK_MAX_BONUS
+  POINTS_PER_EXTRA_MEMBER,
+  STREAK_MAX_BONUS,
+  requiredForPad
 } from '../src/shared/config'
 
 let failures = 0
@@ -166,7 +176,8 @@ check(
     miniGameSuccess: false,
     playerEmotion: Calm,
     featuredEmotion: Joy,
-    streakDays: 1
+    streakDays: 1,
+    memberCount: 2
   }).total,
   POINTS_BASE
 )
@@ -179,7 +190,8 @@ check(
     miniGameSuccess: true,
     playerEmotion: Calm,
     featuredEmotion: Joy,
-    streakDays: 1
+    streakDays: 1,
+    memberCount: 2
   }).total,
   POINTS_BASE + POINTS_COMBO + POINTS_MINIGAME
 )
@@ -192,21 +204,75 @@ check(
     miniGameSuccess: true,
     playerEmotion: Joy,
     featuredEmotion: Joy,
-    streakDays: 1
+    streakDays: 1,
+    memberCount: 2
   }).total,
   (POINTS_BASE + POINTS_COMBO + POINTS_MINIGAME) * FEATURED_MULTIPLIER
 )
 
-// 60 * 2 * 1.5 = 180 is the theoretical ceiling for one circle.
-const ceiling = computeScore({
+// Duo ceiling: (10 + 20 + 30 + 0) * 2 * 1.5 = 180.
+const duoCeiling = computeScore({
   comboMatched: true,
   miniGameSuccess: true,
   playerEmotion: Joy,
   featuredEmotion: Joy,
-  streakDays: 11
+  streakDays: 11,
+  memberCount: 2
 })
-check('ceiling total', ceiling.total, 180)
-check('maxPossibleScore agrees with computeScore', maxPossibleScore(11), ceiling.total)
+check('duo ceiling', duoCeiling.total, 180)
+check('maxPossibleScore agrees (duo)', maxPossibleScore(11, 2), duoCeiling.total)
+
+// Squad ceiling: (10 + 20 + 30 + 10) * 2 * 1.5 = 210.
+const squadCeiling = computeScore({
+  comboMatched: true,
+  miniGameSuccess: true,
+  playerEmotion: Joy,
+  featuredEmotion: Joy,
+  streakDays: 11,
+  memberCount: 4
+})
+check('squad ceiling', squadCeiling.total, 210)
+check('maxPossibleScore agrees (squad)', maxPossibleScore(11, 4), squadCeiling.total)
+checkTrue('a bigger circle always pays more', squadCeiling.total > duoCeiling.total)
+
+/* -------------------------------------------------------------------------- */
+/* Group size bonus                                                          */
+/* -------------------------------------------------------------------------- */
+
+check('duo gets no size bonus', groupSizeBonus(2), 0)
+check('trio size bonus', groupSizeBonus(3), POINTS_PER_EXTRA_MEMBER)
+check('squad size bonus', groupSizeBonus(4), POINTS_PER_EXTRA_MEMBER * 2)
+check('size bonus never negative', groupSizeBonus(0), 0)
+check('size bonus never negative for one', groupSizeBonus(1), 0)
+
+/* -------------------------------------------------------------------------- */
+/* Pad tiers                                                                 */
+/* -------------------------------------------------------------------------- */
+
+// Every pad must be playable: no tier may exceed the circle cap, and at least one
+// pad must be reachable by the smallest possible group, or two friends could never
+// play at all.
+check('there are three pad tiers', PAD_TIERS.length, 3)
+for (let pad = 0; pad < PAD_TIERS.length; pad++) {
+  const required = requiredForPad(pad)
+  checkTrue(
+    `pad ${pad} tier is within the circle limits`,
+    required >= MIN_CIRCLE_PLAYERS && required <= MAX_CIRCLE_PLAYERS
+  )
+}
+checkTrue(
+  'at least one pad is playable by the minimum group',
+  PAD_TIERS.some((tier) => tier.required === MIN_CIRCLE_PLAYERS)
+)
+check(
+  'tiers are all distinct',
+  new Set(PAD_TIERS.map((t) => t.required)).size,
+  PAD_TIERS.length
+)
+checkTrue(
+  'every tier has a name and a location',
+  PAD_TIERS.every((t) => t.tier.length > 0 && t.where.length > 0)
+)
 
 // The breakdown must itemise to the same figure the player is paid, or the result
 // panel would be lying.
@@ -215,13 +281,14 @@ const itemised = computeScore({
   miniGameSuccess: false,
   playerEmotion: Joy,
   featuredEmotion: Joy,
-  streakDays: 3
+  streakDays: 3,
+    memberCount: 2
 })
 check(
   'breakdown reconciles',
   itemised.total,
   Math.round(
-    (itemised.base + itemised.combo + itemised.miniGame) *
+    (itemised.base + itemised.combo + itemised.miniGame + itemised.groupSize) *
       itemised.featuredMultiplier *
       (1 + itemised.streakBonus)
   )
@@ -235,7 +302,8 @@ for (let streak = 1; streak <= 12; streak++) {
     miniGameSuccess: true,
     playerEmotion: Joy,
     featuredEmotion: Joy,
-    streakDays: streak
+    streakDays: streak,
+    memberCount: 2
   })
   checkTrue(`streak ${streak} total is an integer`, Number.isInteger(result.total))
 }

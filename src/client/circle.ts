@@ -10,19 +10,32 @@
  */
 
 import { Transform, engine } from '@dcl/sdk/ecs'
-import { CIRCLE_PROXIMITY, PAD_POSITIONS, PAD_RADIUS } from '../shared/config'
+import { CIRCLE_PROXIMITY, PAD_POSITIONS, PAD_RADIUS, PAD_TIERS } from '../shared/config'
 import { room } from '../shared/messages'
 import { CircleCore, CircleProgress } from '../shared/schemas'
 import { CirclePhase, EmotionId, GameInputKind, MiniGameKind } from '../shared/types'
 import { PadView, state } from './state'
 
-/** Names of the pads as shown in the UI. Short so they fit a phone screen. */
-export const PAD_NAMES = ['North Pad', 'West Pad', 'East Pad']
+/**
+ * Pad names as shown in the UI.
+ *
+ * Built from the tier table so the label always states the group size the pad
+ * actually needs - "Duo (West)" tells a player both where to go and whether it
+ * will work with the friend they brought.
+ */
+export const PAD_NAMES = PAD_TIERS.map((tier) => `${tier.tier} Pad`)
+
+/** Compass location of each pad, for navigation hints. */
+export const PAD_WHERE = PAD_TIERS.map((tier) => tier.where)
+
+/** Group size each pad needs. */
+export const PAD_REQUIRED = PAD_TIERS.map((tier) => tier.required)
 
 /** A zeroed view, used once per pad and then mutated in place. */
 function blankPadView(padIndex: number): PadView {
   return {
     padIndex,
+    required: PAD_TIERS[padIndex]?.required ?? 2,
     circleId: 0,
     phase: CirclePhase.Gathering,
     game: MiniGameKind.RhythmTap,
@@ -142,6 +155,7 @@ export function refreshPadViews(): void {
 
     // Scalars are cheap, so they are always current.
     view.circleId = core.circleId
+    view.required = core.required || PAD_TIERS[core.padIndex]?.required || 2
     view.phase = core.phase as CirclePhase
     view.game = core.game as MiniGameKind
     view.startsAt = core.startsAt
@@ -193,14 +207,30 @@ export function refreshPadViews(): void {
   state.waiting = state.serverReady || inRoster
 }
 
-/** Asks the server to form a circle on the pad the player is standing on. */
-export function requestFormCircle(): void {
-  room.send('formCircle', { padIndex: state.nearestPad })
+/**
+ * How many players are currently filling the pad the local player is on, and how
+ * many that pad needs. Returns null when the player is not on a pad.
+ *
+ * This is what replaced the Form Circle button: the player watches a counter fill
+ * instead of hunting for a control, and there is no way for two people to be stood
+ * together yet fail to match.
+ */
+export function padFill(): { here: number; required: number; padIndex: number } | null {
+  if (state.nearestPad < 0) return null
+  const view = state.pads[state.nearestPad]
+  const required = view?.required ?? PAD_REQUIRED[state.nearestPad] ?? 2
+  const here =
+    view && view.phase === CirclePhase.Gathering ? view.members.length : view ? view.members.length : 0
+  return { here, required, padIndex: state.nearestPad }
 }
 
-/** Withdraws from the waiting state. */
-export function cancelWaiting(): void {
-  room.send('cancelReady', { padIndex: state.nearestPad })
+/** Fill state for any pad, for the plaza overview. */
+export function padFillFor(padIndex: number): { here: number; required: number } {
+  const view = state.pads[padIndex]
+  return {
+    here: view && view.phase === CirclePhase.Gathering ? view.members.length : 0,
+    required: view?.required ?? PAD_REQUIRED[padIndex] ?? 2
+  }
 }
 
 /**

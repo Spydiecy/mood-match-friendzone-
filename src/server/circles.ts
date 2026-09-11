@@ -24,15 +24,16 @@ import {
   MAX_CIRCLE_PLAYERS,
   MINIGAME_DURATION_MS,
   MIN_CIRCLE_PLAYERS,
+  PAD_DWELL_MS,
   PAD_POSITIONS,
   PAD_RADIUS,
   PROGRESS_PUSH_MS,
-  READY_WINDOW_MS,
   RESULT_MS,
   RHYTHM_BEAT_MS,
   RHYTHM_SUCCESS_RATIO,
   RHYTHM_TOLERANCE_MS
 } from '../shared/config'
+import { requiredForPad } from '../shared/config'
 import { evaluateCombo } from '../shared/emotions'
 import { NoticeTone, RefusalCode } from '../shared/messages'
 import { CircleCore, CircleProgress, padCircleSyncId } from '../shared/schemas'
@@ -135,6 +136,7 @@ export function initCircles(
     CircleCore.create(entity, {
       circleId: 0,
       padIndex,
+      required: requiredForPad(padIndex),
       phase: CirclePhase.Gathering,
       game: MiniGameKind.RhythmTap,
       members: [],
@@ -219,78 +221,28 @@ function isOnPad(record: PlayerRecord, padIndex: number): boolean {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Handles a "Form Circle" request. Validates server-side that the player really
- * is standing on the pad they claim; the client's `padIndex` is only a hint and
- * the nearest pad wins if it disagrees.
+ * Legacy no-op kept for older clients.
+ *
+ * There is no Form Circle button any more - standing on a pad is what fills it.
+ * A client that still sends `formCircle` gets told so rather than being ignored.
  */
-export function requestReady(record: PlayerRecord, claimedPad: number): void {
-  if (record.activePad !== -1) {
-    hooks?.notify(
-      record.address,
-      RefusalCode.AlreadyInCircle,
-      'You are already in a circle.',
-      NoticeTone.Info
-    )
-    return
-  }
+export function requestReady(record: PlayerRecord, _claimedPad: number): void {
+  if (record.activePad !== -1) return
 
-  const position = getPlayerPosition(record)
-  if (!position) {
-    hooks?.notify(
-      record.address,
-      RefusalCode.NotOnPad,
-      'Still finding you. Try again in a second.',
-      NoticeTone.Warning
-    )
-    return
-  }
-
-  // Trust geometry, not the client: pick the nearest pad the player is inside.
-  let padIndex = -1
-  let bestDistance = Number.MAX_VALUE
-  for (let i = 0; i < PAD_POSITIONS.length; i++) {
-    const distance = horizontalDistanceSq(position, PAD_POSITIONS[i])
-    if (distance <= PAD_RADIUS * PAD_RADIUS && distance < bestDistance) {
-      bestDistance = distance
-      padIndex = i
-    }
-  }
-
-  if (padIndex === -1) {
-    hooks?.notify(
-      record.address,
-      RefusalCode.NotOnPad,
-      'Stand on a glowing Mood Pad first.',
-      NoticeTone.Warning
-    )
-    return
-  }
-
-  const pad = pads[padIndex]
-  if (pad.phase !== CirclePhase.Gathering) {
-    hooks?.notify(
-      record.address,
-      RefusalCode.PadBusy,
-      'That pad is mid-round. Try another one.',
-      NoticeTone.Warning
-    )
-    return
-  }
-
-  record.ready = true
-  record.readyPad = padIndex
-  record.readyAt = Date.now()
-
-  if (claimedPad !== padIndex) {
-    console.log('[SERVER] pad hint corrected', claimedPad, '->', padIndex, 'for', record.address)
-  }
+  hooks?.notify(
+    record.address,
+    RefusalCode.None,
+    record.onPad === -1
+      ? 'Just stand inside a glowing ring - circles start on their own.'
+      : 'No need to tap - the circle starts as soon as the ring is full.',
+    NoticeTone.Info
+  )
 }
 
-/** Handles a player backing out of the waiting state. */
-export function cancelReady(record: PlayerRecord): void {
-  record.ready = false
-  record.readyPad = -1
-  record.readyAt = 0
+/** Legacy no-op. Presence is now the only thing that fills a pad. */
+export function cancelReady(_record: PlayerRecord): void {
+  // Intentionally empty: there is no opt-in state to cancel. Stepping off the pad
+  // is how you leave, and `refreshPadPresence` picks that up on the next tick.
 }
 
 /**
@@ -471,23 +423,43 @@ function objectiveMet(pad: PadRuntime): boolean {
 
 /** Advances every pad. Called once per server tick. */
 export function tickCircles(dtMs: number, now: number): void {
-  expireStaleReadyFlags(now)
+  refreshPadPresence(now)
   for (const pad of pads) {
     tickPad(pad, dtMs, now)
   }
 }
 
-/** Clears ready flags that have gone cold, so pads do not show phantom players. */
-function expireStaleReadyFlags(now: number): void {
+/**
+ * Recomputes which pad each player is standing on.
+ *
+ * `onPadSince` is only reset when the pad actually CHANGES, so a player who stands
+ * still keeps accumulating dwell time and is not repeatedly re-timed by this
+ * running every tick.
+ */
+function refreshPadPresence(now: number): void {
   for (const record of allPlayers()) {
-    if (!record.ready) continue
-    if (record.activePad !== -1) continue
+    const position = getPlayerPosition(record)
 
-    const expired = now - record.readyAt > READY_WINDOW_MS
-    const wandered = record.readyPad === -1 || !isOnPad(record, record.readyPad)
+    let padIndex = -1
+    if (position) {
+      let bestDistance = Number.MAX_VALUE
+      for (let i = 0; i < PAD_POSITIONS.length; i++) {
+        const distance = horizontalDistanceSq(position, PAD_POSITIONS[i])
+        if (distance <= PAD_RADIUS * PAD_RADIUS && distance < bestDistance) {
+          bestDistance = distance
+          padIndex = i
+        }
+      }
+    }
 
-    if (expired || wandered) {
-      cancelReady(record)
+    if (record.onPad !== padIndex) {
+      record.onPad = padIndex
+      record.onPadSince = now
+      // `ready` is now purely a display signal meaning "standing on a pad", which
+      // is what the client's waiting indicator reads.
+      record.ready = padIndex !== -1
+      record.readyPad = padIndex
+      hooks?.publishStat(record)
     }
   }
 }
@@ -519,6 +491,7 @@ function tickPad(pad: PadRuntime, dtMs: number, now: number): void {
  */
 function tickGathering(pad: PadRuntime, now: number): void {
   const selected = selectCircleMembers(pad.padIndex)
+  const required = requiredForPad(pad.padIndex)
 
   const changed =
     selected.length !== pad.members.length ||
@@ -531,29 +504,38 @@ function tickGathering(pad: PadRuntime, now: number): void {
     writeCore(pad)
   }
 
-  if (selected.length >= MIN_CIRCLE_PLAYERS) {
-    startCountdown(pad, selected, now)
+  // Auto-start once the tier is satisfied. No button, no confirmation: if you are
+  // standing in the ring with enough people, the round begins. The existing
+  // 3-second countdown doubles as the grace period - `tickCountdown` aborts if
+  // anyone steps back out, so an accidental fill costs nobody a round.
+  if (selected.length >= required) {
+    startCountdown(pad, selected.slice(0, Math.max(required, MIN_CIRCLE_PLAYERS)), now)
   }
 }
 
 /**
- * Chooses who forms the circle on a pad.
+ * Chooses who is currently filling a pad.
  *
- * Greedy and deterministic: the longest-waiting eligible player anchors the
- * circle, then anyone within CIRCLE_PROXIMITY of EVERY already-selected member
- * joins. Checking against all selected members (not just the anchor) is what
- * makes "within 3 units of each other" actually true pairwise.
+ * PRESENCE IS THE ONLY REQUIREMENT. Standing on the pad for `PAD_DWELL_MS` is
+ * enough - there is no button and no ready flag. That is the fix for circles never
+ * starting: the old version required every member to have tapped Form Circle with
+ * all their flags alive in the same 6-second window, which silently failed whenever
+ * one person did not find the button or two people tapped too far apart.
+ *
+ * Ordered by how long each player has been on the pad, so if more players are
+ * present than the tier needs, the ones who have waited longest go first.
  */
 function selectCircleMembers(padIndex: number): PlayerRecord[] {
+  const now = Date.now()
+
   const candidates = allPlayers()
     .filter(
       (record) =>
-        record.ready &&
-        record.readyPad === padIndex &&
         record.activePad === -1 &&
-        isOnPad(record, padIndex)
+        record.onPad === padIndex &&
+        now - record.onPadSince >= PAD_DWELL_MS
     )
-    .sort((a, b) => a.readyAt - b.readyAt)
+    .sort((a, b) => a.onPadSince - b.onPadSince)
 
   const selected: PlayerRecord[] = []
   const limitSq = CIRCLE_PROXIMITY * CIRCLE_PROXIMITY
@@ -657,6 +639,9 @@ function tickCountdown(pad: PadRuntime, now: number): void {
     }
   }
 
+  // Aborting on the tier count would be harsh: if a fourth player wanders off a
+  // Squad pad the remaining three should still get to play. Only collapse below
+  // the absolute minimum.
   if (pad.members.length < MIN_CIRCLE_PLAYERS) {
     abortPad(pad)
     return
@@ -859,6 +844,7 @@ function writeCore(pad: PadRuntime): void {
   if (!core) return
   core.circleId = pad.circleId
   core.padIndex = pad.padIndex
+  core.required = requiredForPad(pad.padIndex)
   core.phase = pad.phase
   core.game = pad.game
   core.members = pad.members.slice()

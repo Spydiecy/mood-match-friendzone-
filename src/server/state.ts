@@ -29,11 +29,20 @@ export interface PlayerRecord {
   unlockedMask: number
   /** Successful circles completed while holding each emotion. */
   successPerEmotion: number[]
-  /** True while waiting on a pad for others. */
+  /** Display signal: true while standing on a pad. */
   ready: boolean
-  /** Pad index they are waiting on, or -1. */
+  /** Pad index they are standing on, or -1. Mirrors `onPad`. */
   readyPad: number
   readyAt: number
+  /**
+   * Pad the player is currently standing on, or -1.
+   *
+   * This replaced a tap-driven "ready" flag. Presence is the only requirement to
+   * fill a pad now, which is what fixed circles never starting.
+   */
+  onPad: number
+  /** Server clock at which they stepped onto `onPad`, for the dwell check. */
+  onPadSince: number
   /** Pad index of the circle they are currently playing, or -1. */
   activePad: number
   /** Set once the durable profile has been read from Storage. */
@@ -63,6 +72,8 @@ function blankRecord(address: string): PlayerRecord {
     ready: false,
     readyPad: -1,
     readyAt: 0,
+    onPad: -1,
+    onPadSince: 0,
     activePad: -1,
     loaded: false,
     dirty: false,

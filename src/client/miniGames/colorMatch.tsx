@@ -149,6 +149,29 @@ export function ColorMatchPanel(props: { round: RoundView }) {
         </Row>
       )}
 
+      {/* Step dots: how far through the sequence the group is. */}
+      <Row width="100%" justifyContent="center" marginTop={SPACE.xs}>
+        {round.sequence.map((_, index) => (
+          <UiEntity
+            key={`step-${index}`}
+            uiTransform={{
+              width: index === round.step ? 16 : 12,
+              height: index === round.step ? 16 : 12,
+              borderRadius: RADIUS.pill,
+              margin: { left: 3, right: 3 }
+            }}
+            uiBackground={{
+              color:
+                index < round.step
+                  ? COLORS.good
+                  : index === round.step
+                    ? COLORS.accent
+                    : COLORS.chip
+            }}
+          />
+        ))}
+      </Row>
+
       <UiEntity uiTransform={{ width: 470, height: 14, margin: { top: SPACE.xs } }}>
         <ProgressBar value={round.progress} fill={COLORS.accent} height={14} />
       </UiEntity>

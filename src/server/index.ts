@@ -372,7 +372,8 @@ function award(
       miniGameSuccess: success,
       playerEmotion: record.emotion,
       featuredEmotion,
-      streakDays: record.streakDays
+      streakDays: record.streakDays,
+      memberCount: members.length
     })
 
     record.score += breakdown.total
@@ -403,6 +404,7 @@ function award(
         base: breakdown.base,
         combo: breakdown.combo,
         miniGame: breakdown.miniGame,
+        groupSize: breakdown.groupSize,
         featuredMultiplier: breakdown.featuredMultiplier,
         streakBonus: breakdown.streakBonus,
         total: breakdown.total,

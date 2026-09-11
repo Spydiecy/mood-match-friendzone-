@@ -101,7 +101,7 @@ export function HoldZonesPanel(props: { round: RoundView }) {
             ? `Starting in ${countdownSeconds(round, now)}`
             : everyone
               ? 'All zones held - timer running'
-              : 'Waiting on someone to hold'
+              : missingNames(round)
         }
         fontSize={FONT.small}
         color={everyone ? COLORS.good : COLORS.warn}
@@ -129,6 +129,23 @@ export function HoldZonesPanel(props: { round: RoundView }) {
       />
     </UiEntity>
   )
+}
+
+/**
+ * Names whoever is not currently holding.
+ *
+ * "Waiting on someone" is useless information in a cooperative game - the group
+ * needs to know WHO, so they can call it out. That is the entire mechanic.
+ */
+function missingNames(round: RoundView): string {
+  const missing: string[] = []
+  for (let i = 0; i < round.members.length; i++) {
+    if (memberHolding(round, i)) continue
+    missing.push(i === round.myIndex ? 'you' : shortName(round.memberNames[i] ?? 'player'))
+  }
+  if (missing.length === 0) return 'All zones held'
+  if (missing.length === 1) return `Waiting on ${missing[0]}`
+  return `Waiting on ${missing.length} players`
 }
 
 /** Trims a long display name so the tile does not overflow on a phone. */

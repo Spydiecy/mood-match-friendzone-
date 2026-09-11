@@ -135,6 +135,8 @@ export const MoodMessages = {
     base: Schemas.Int,
     combo: Schemas.Int,
     miniGame: Schemas.Int,
+    /** Bonus for circle size, so a Squad round visibly pays more than a Duo. */
+    groupSize: Schemas.Int,
     featuredMultiplier: Schemas.Int,
     streakBonus: Schemas.Float,
     total: Schemas.Int,

@@ -22,7 +22,15 @@ import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
 import { MIN_CIRCLE_PLAYERS } from '../../shared/config'
 import { getEmotion } from '../../shared/emotions'
 import { CirclePhase } from '../../shared/types'
-import { PAD_NAMES, cancelWaiting, pingPlaza, requestFormCircle, waitingElsewhere } from '../circle'
+import {
+  PAD_NAMES,
+  PAD_REQUIRED,
+  PAD_WHERE,
+  padFill,
+  padFillFor,
+  pingPlaza,
+  waitingElsewhere
+} from '../circle'
 import { MiniGameAction, MiniGamePanel, miniGameBrief, miniGameName } from '../miniGames'
 import { roundFromPad, roundFromPractice } from '../miniGames/round'
 import { practiceBest, startPractice, stopPractice } from '../practice'
@@ -199,46 +207,34 @@ function StatusChip() {
 
 /** The current one-line instruction. */
 function currentGuidance(): { headline: string; detail: string; urgent: boolean } {
-  const onPad = state.nearestPad >= 0
+  const fill = padFill()
   const elsewhere = waitingElsewhere()
-  const gathering = onPad ? state.pads[state.nearestPad] : undefined
-  const waitingHere =
-    gathering && gathering.phase === CirclePhase.Gathering ? gathering.members.length : 0
 
-  if (state.waiting) {
-    const needed = Math.max(0, MIN_CIRCLE_PLAYERS - waitingHere)
+  if (fill) {
+    const needed = Math.max(0, fill.required - fill.here)
     return {
-      headline: needed > 0 ? `Waiting for ${needed} more` : 'Circle forming',
+      headline: `${PAD_NAMES[fill.padIndex]}  ${fill.here}/${fill.required}`,
       detail:
-        state.playersOnline > 1
-          ? 'Your avatar is waving - stay in the ring'
-          : 'Tap Call to ping everyone in the World',
-      urgent: true
-    }
-  }
-
-  if (onPad) {
-    return {
-      headline: `On the ${PAD_NAMES[state.nearestPad]}`,
-      detail:
-        waitingHere > 0
-          ? `${waitingHere} already waiting - tap Form Circle`
-          : 'Tap Form Circle and wait for someone',
-      urgent: waitingHere > 0
+        needed === 0
+          ? 'Starting now'
+          : state.playersOnline > 1
+            ? `Need ${needed} more - your avatar is waving`
+            : `Need ${needed} more - tap Call to ping the World`,
+      urgent: fill.here > 0
     }
   }
 
   if (elsewhere) {
     return {
       headline: `${elsewhere.count} waiting at the ${PAD_NAMES[elsewhere.padIndex]}`,
-      detail: 'Walk over and tap Form Circle',
+      detail: `Walk over - it needs ${PAD_REQUIRED[elsewhere.padIndex]}`,
       urgent: true
     }
   }
 
   return {
-    headline: 'Walk to a Mood Pad',
-    detail: `${state.playersOnline} here now - three glowing rings`,
+    headline: 'Stand in a Mood Pad',
+    detail: `${state.playersOnline} here now - circles start on their own`,
     urgent: false
   }
 }
@@ -276,7 +272,7 @@ function ActiveRound() {
     <Panel width={780} maxHeight={BUDGET.centreMax} padding={SPACE.md} textured>
       <Row width="100%" justifyContent="center">
         <Text
-          value={`${miniGameName(pad.game)}  -  ${pad.members.length} players`}
+          value={`${miniGameName(pad.game)}  -  ${PAD_NAMES[pad.padIndex]}  ${pad.members.length}/${pad.required}`}
           fontSize={FONT.heading}
           color={COLORS.text}
           width={620}
@@ -420,6 +416,9 @@ function PayoutPanel() {
       {payout.combo > 0 && <PayoutLine label="Emotion combo" value={`+${payout.combo}`} />}
       {payout.miniGame > 0 && (
         <PayoutLine label="Mini-game cleared" value={`+${payout.miniGame}`} />
+      )}
+      {payout.groupSize > 0 && (
+        <PayoutLine label="Bigger circle" value={`+${payout.groupSize}`} />
       )}
       {payout.featuredMultiplier > 1 && (
         <PayoutLine label="Featured mood" value={`x${payout.featuredMultiplier}`} />
@@ -580,12 +579,15 @@ function ActionColumn(props: {
   )
 }
 
-/** The single most important button in the game. */
+/**
+ * The main readout at the bottom.
+ *
+ * NOT a button any more. Circles fill automatically from presence, so this shows
+ * how full the ring is - the counter and the bar are the feedback that the old
+ * Form Circle button was failing to give. When the player is not on a pad it lists
+ * the three pads and what each needs, so there is never a question of where to go.
+ */
 function PrimaryAction() {
-  const onPad = state.nearestPad >= 0
-
-  // During the result phase the pad is still busy, so Form Circle would be refused.
-  // Show the real state rather than a button that fails.
   if (state.myPad && state.myPad.phase === CirclePhase.Result) {
     return (
       <PrimaryButton
@@ -597,40 +599,122 @@ function PrimaryAction() {
     )
   }
 
-  if (state.waiting) {
-    return (
-      <PrimaryButton
-        label="Waiting"
-        sublabel="Tap to cancel"
-        onClick={() => cancelWaiting()}
-        background={COLORS.chip}
-      />
-    )
-  }
+  const fill = padFill()
+  if (fill) return <FillMeter here={fill.here} required={fill.required} padIndex={fill.padIndex} />
 
-  if (!onPad) {
-    return (
-      <PrimaryButton
-        label="Walk to a Mood Pad"
-        sublabel="Three glowing rings"
-        onClick={() => {
-          state.screen = 'info'
-        }}
-        background={COLORS.chip}
-        labelColor={COLORS.textDim}
-      />
-    )
-  }
+  return <PadDirectory />
+}
+
+/**
+ * The fill counter, in the style of a lobby: "2/3" with a segment per slot.
+ *
+ * Segments rather than a plain bar because the counts are tiny (2 to 4) and
+ * discrete slots read instantly at a glance, where a continuous bar does not.
+ */
+function FillMeter(props: { here: number; required: number; padIndex: number }) {
+  const full = props.here >= props.required
+  const accent = full ? COLORS.good : emotionColor(state.emotion)
 
   return (
-    <PrimaryButton
-      label="Form Circle"
-      sublabel={PAD_NAMES[state.nearestPad]}
-      icon={ICON.play}
-      onClick={() => requestFormCircle()}
-      background={emotionColor(state.emotion)}
-      labelColor={COLORS.panel}
-    />
+    <UiEntity
+      uiTransform={{
+        width: TOUCH.primaryWidth,
+        height: TOUCH.primaryHeight,
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: RADIUS.pill,
+        borderWidth: 3,
+        borderColor: accent
+      }}
+      uiBackground={{ color: COLORS.panel }}
+    >
+      <Text
+        value={
+          full
+            ? 'Starting'
+            : `${PAD_NAMES[props.padIndex]}  ${props.here}/${props.required}`
+        }
+        fontSize={FONT.heading}
+        color={full ? COLORS.good : COLORS.text}
+      />
+      <Row width="100%" justifyContent="center">
+        {slots(props.required).map((slot) => (
+          <UiEntity
+            key={`slot-${slot}`}
+            uiTransform={{
+              width: Math.round(240 / props.required),
+              height: 10,
+              borderRadius: RADIUS.pill,
+              margin: { left: 3, right: 3, top: 3 }
+            }}
+            uiBackground={{ color: slot < props.here ? accent : COLORS.chip }}
+          />
+        ))}
+      </Row>
+    </UiEntity>
+  )
+}
+
+/** [0, 1, ... n-1] */
+function slots(n: number): number[] {
+  const out: number[] = []
+  for (let i = 0; i < n; i++) out.push(i)
+  return out
+}
+
+/**
+ * The three pads and their live occupancy, shown when the player is not on one.
+ *
+ * Answers "where do I go" with real numbers rather than prose, which matters most
+ * in a quiet plaza where the answer is "the Duo pad, because it only needs two".
+ */
+function PadDirectory() {
+  return (
+    <UiEntity
+      uiTransform={{
+        width: 470,
+        height: TOUCH.primaryHeight,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: RADIUS.panel
+      }}
+      uiBackground={{ color: COLORS.panel }}
+    >
+      {PAD_NAMES.map((name, index) => {
+        const fill = padFillFor(index)
+        const active = fill.here > 0
+        return (
+          <UiEntity
+            key={`dir-${index}`}
+            uiTransform={{
+              width: 150,
+              height: 74,
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: RADIUS.chip,
+              borderWidth: active ? 2 : 0,
+              borderColor: active ? COLORS.good : COLORS.none,
+              margin: { left: 2, right: 2 }
+            }}
+            uiBackground={{ color: active ? COLORS.surface : COLORS.chip }}
+          >
+            <Text
+              value={`${fill.here}/${fill.required}`}
+              fontSize={FONT.heading}
+              color={active ? COLORS.good : COLORS.text}
+            />
+            <Text
+              value={`${name.replace(' Pad', '')} - ${PAD_WHERE[index]}`}
+              fontSize={FONT.tiny}
+              color={COLORS.textDim}
+            />
+          </UiEntity>
+        )
+      })}
+    </UiEntity>
   )
 }
 

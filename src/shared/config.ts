@@ -25,6 +25,38 @@ export const PAD_POSITIONS: ReadonlyArray<{ x: number; y: number; z: number }> =
 ]
 
 /**
+ * Each pad is a different group size, like a lobby playlist.
+ *
+ * WHY TIERS: with one shared rule, a pad either needed a button (which is what
+ * broke - see below) or auto-started at two and a third player could never join
+ * in time. Giving each pad a fixed target makes the requirement legible before
+ * you step on it, gives bigger groups something to aim for, and guarantees a pair
+ * can always play via the Duo pad however quiet the plaza is.
+ *
+ * The Duo pad is the closest to the spawn point on purpose: it is the one that
+ * always works, so it should be the first one a new arrival walks into.
+ *
+ * Order matches PAD_POSITIONS.
+ */
+export const PAD_TIERS: ReadonlyArray<{
+  /** Group size that starts a round on this pad. */
+  required: number
+  /** Short tier name, shown in-world and in the HUD. */
+  tier: string
+  /** Compass name, for navigation. */
+  where: string
+}> = [
+  { required: 4, tier: 'Squad', where: 'North' },
+  { required: 2, tier: 'Duo', where: 'West' },
+  { required: 3, tier: 'Trio', where: 'East' }
+]
+
+/** Players needed on a given pad. */
+export function requiredForPad(padIndex: number): number {
+  return PAD_TIERS[padIndex]?.required ?? MIN_CIRCLE_PLAYERS
+}
+
+/**
  * Radius of a pad in metres. A player must be inside this to join a circle.
  *
  * Kept deliberately tight so that standing on a pad already means "huddled with
@@ -53,17 +85,29 @@ export const PAD_VISUAL_DIAMETER = PAD_RADIUS * 2
  */
 export const CIRCLE_PROXIMITY = PAD_RADIUS * 2
 
-/** Minimum players needed for a real (scoring) circle. */
+/**
+ * Absolute minimum for a scoring circle. The Duo pad uses exactly this; the other
+ * pads require more (see PAD_TIERS).
+ */
 export const MIN_CIRCLE_PLAYERS = 2
 
 /** Maximum players in one circle. */
 export const MAX_CIRCLE_PLAYERS = 4
 
 /**
- * How long a "Ready" flag stays hot after a player taps Form Circle.
- * Lets two players tap a couple of seconds apart and still match up.
+ * How long a player must stand still on a pad before they count toward filling it.
+ *
+ * Small, but not zero: it stops someone who is merely walking across a pad from
+ * being yanked into a round.
+ *
+ * This REPLACED a "tap Form Circle to become ready" flag, which was the cause of
+ * circles never starting. That flag required every member to have tapped AND for
+ * all their flags to be alive simultaneously within a 6-second window, so a pair
+ * who tapped more than six seconds apart - or where only one person found the
+ * button - simply never matched, with nothing on screen explaining why. Presence
+ * is now the only requirement.
  */
-export const READY_WINDOW_MS = 6000
+export const PAD_DWELL_MS = 700
 
 /** Mini-games ------------------------------------------------------------- */
 
@@ -110,6 +154,15 @@ export const COLOR_SEQUENCE_LENGTH = 4
 
 /** Points for forming a valid circle at all. */
 export const POINTS_BASE = 10
+
+/**
+ * Extra points per member beyond the second.
+ *
+ * Gives the Trio and Squad pads a reason to exist beyond flavour: a bigger circle
+ * is harder to assemble, so it should pay more. A Squad round is +10 before any
+ * multiplier.
+ */
+export const POINTS_PER_EXTRA_MEMBER = 5
 
 /** Bonus for a recognised emotion combination. */
 export const POINTS_COMBO = 20

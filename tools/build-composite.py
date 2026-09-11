@@ -34,10 +34,11 @@ PAD_RADIUS = 3.0
 PAD_DIAMETER = PAD_RADIUS * 2
 
 # Must match PAD_POSITIONS in src/shared/config.ts
+# (label, x, z, tier, where) - tier/where must match PAD_TIERS in config.ts
 PADS = [
-    ("A", 16.0, 23.0),
-    ("B", 9.9, 12.5),
-    ("C", 22.1, 12.5),
+    ("A", 16.0, 23.0, "SQUAD", "North"),
+    ("B", 9.9, 12.5, "DUO", "West"),
+    ("C", 22.1, 12.5, "TRIO", "East"),
 ]
 
 # Must match EMOTIONS in src/shared/emotions.ts (order = EmotionId)
@@ -182,23 +183,24 @@ text(featured_sign, "FEATURED TODAY", 1.1, (0.29, 0.62, 1.0))
 billboard(featured_sign)
 
 # --- Mood Pads --------------------------------------------------------------
-for label, x, z in PADS:
+for label, x, z, tier, where in PADS:
     pad = new_entity(f"MoodPad_{label}")
     transform(pad, (x, 0.06, z), scale=(PAD_DIAMETER, 0.08, PAD_DIAMETER))
     mesh(pad, "cylinder", radiusTop=0.5, radiusBottom=0.5)
     material(pad, (0.29, 0.62, 1.0), emissive=0.8, roughness=0.4)
 
-for label, x, z in PADS:
+for label, x, z, tier, where in PADS:
     beacon = new_entity(f"PadBeacon_{label}")
     # Positioned and stretched at runtime; the pivot of a cylinder is its centre.
     transform(beacon, (x, 0.3, z), scale=(0.34, 0.6, 0.34))
     mesh(beacon, "cylinder", radiusTop=0.5, radiusBottom=0.5)
     material(beacon, (0.29, 0.62, 1.0), emissive=2.2, roughness=0.2)
 
-for label, x, z in PADS:
+for label, x, z, tier, where in PADS:
     pad_label = new_entity(f"PadLabel_{label}")
     transform(pad_label, (x, 2.5, z))
-    text(pad_label, f"{label} PAD", 1.0)
+    # Overwritten every frame at runtime with the live "n/required" count.
+    text(pad_label, f"{tier} - {where}\n0/0", 1.0)
     billboard(pad_label)
 
 # --- Leaderboard board ------------------------------------------------------
@@ -218,7 +220,7 @@ welcome = new_entity("WelcomeSign")
 transform(welcome, (CENTER[0], 2.5, 9.0))
 text(
     welcome,
-    "MOOD MATCH\nstand on a pad with someone\nand tap Form Circle",
+    "MOOD MATCH\njust stand in a ring with others\ncircles start on their own",
     0.95,
 )
 billboard(welcome)

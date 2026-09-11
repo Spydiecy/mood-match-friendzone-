@@ -19,6 +19,7 @@ import {
   POINTS_BASE,
   POINTS_COMBO,
   POINTS_MINIGAME,
+  POINTS_PER_EXTRA_MEMBER,
   STREAK_MAX_BONUS
 } from '../../shared/config'
 import { EMOTIONS } from '../../shared/emotions'
@@ -118,9 +119,15 @@ function StepCircle() {
         justifyContent: 'center'
       }}
     >
-      <Text value="Form a circle" fontSize={FONT.title} color={COLORS.text} width={840} />
+      <Text value="Just stand in a ring" fontSize={FONT.title} color={COLORS.text} width={840} />
       <Paragraph
-        value={`Walk into a glowing Mood Pad and tap Form Circle. Once ${MIN_CIRCLE_PLAYERS} or more players are in the same ring, the circle locks in.`}
+        value="There is no button. Walk into a glowing Mood Pad and the circle fills on its own - watch the counter above the ring."
+        lines={2}
+        width={840}
+        marginBottom={SPACE.sm}
+      />
+      <Paragraph
+        value="Each ring wants a different group size: Duo needs 2 (west), Trio needs 3 (east), Squad needs 4 (north). Bigger circles pay more."
         lines={2}
         width={840}
         marginBottom={SPACE.sm}
@@ -135,7 +142,7 @@ function StepCircle() {
       />
       <Paragraph
         value="Nobody around? Tap Call to ping the World, or Practice to try one solo. Practice does not score."
-        lines={2}
+        lines={1}
         width={840}
       />
     </UiEntity>
@@ -157,6 +164,7 @@ function StepScore() {
       <Text value="Score together" fontSize={FONT.title} color={COLORS.text} width={840} />
 
       <ScoreLine label="Form a circle" value={`+${POINTS_BASE}`} />
+      <ScoreLine label="Each player beyond two" value={`+${POINTS_PER_EXTRA_MEMBER}`} />
       <ScoreLine label="Matching mood combo" value={`+${POINTS_COMBO}`} />
       <ScoreLine label="Clear the mini-game" value={`+${POINTS_MINIGAME}`} />
       <ScoreLine label="Holding the featured mood" value={`x${FEATURED_MULTIPLIER}`} />

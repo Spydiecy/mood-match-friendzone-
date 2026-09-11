@@ -117,6 +117,12 @@ export const CircleCore = engine.defineComponent('moodmatch::CircleCore', {
   circleId: Schemas.Int,
   /** Index into PAD_POSITIONS. */
   padIndex: Schemas.Int,
+  /**
+   * Group size this pad needs to start a round (its tier).
+   * Published rather than derived so a client can render the requirement without
+   * having to share the tier table.
+   */
+  required: Schemas.Int,
   /** A `CirclePhase` value. */
   phase: Schemas.Int,
   /** A `MiniGameKind` value. */

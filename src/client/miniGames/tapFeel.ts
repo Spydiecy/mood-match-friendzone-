@@ -142,3 +142,40 @@ export function bestTapStreak(): number {
 export function predictedHits(): number {
   return state.hits
 }
+
+/** Outcome of a single beat, for the history strip. */
+export type BeatMark = 'hit' | 'missed' | 'current' | 'upcoming'
+
+/**
+ * Per-beat history of the local player's own taps.
+ *
+ * Drawn as a strip of dots so the player can see the shape of their run rather
+ * than just a total: three hits then a gap is legible feedback about WHERE they
+ * are drifting, which a single counter cannot express.
+ *
+ * Local by necessity - the server publishes an aggregate hit count, not a
+ * per-beat, per-member breakdown, and sending that every tick would be far more
+ * traffic than the feature is worth.
+ */
+export function beatHistory(round: RoundView, now: number): BeatMark[] {
+  const total = beatCount(round)
+  const marks: BeatMark[] = []
+
+  // Which beat is live right now, by the same grid the server judges on.
+  const elapsed = now - round.startsAt
+  const currentBeat = elapsed < 0 ? -1 : Math.round(elapsed / RHYTHM_BEAT_MS)
+
+  for (let beat = 0; beat < total; beat++) {
+    if (state.circleId === round.circleId && state.scored.has(beat)) {
+      marks.push('hit')
+    } else if (beat === currentBeat) {
+      marks.push('current')
+    } else if (beat < currentBeat) {
+      marks.push('missed')
+    } else {
+      marks.push('upcoming')
+    }
+  }
+
+  return marks
+}

@@ -13,7 +13,7 @@ import { executeTask } from '@dcl/sdk/ecs'
 import { openExternalUrl } from '~system/RestrictedActions'
 import { getRealm } from '~system/Runtime'
 import { DEFAULT_INVITE_URL } from '../../shared/config'
-import { PAD_NAMES } from '../circle'
+import { PAD_NAMES, PAD_WHERE } from '../circle'
 import { NoticeTone } from '../../shared/messages'
 import { showNotice, state } from '../state'
 
@@ -57,8 +57,8 @@ export function inviteUrl(): string {
  * 32x32 plaza.
  */
 export function meetupHint(): string {
-  const pad = state.nearestPad >= 0 ? state.nearestPad : 0
-  return `Meet at the ${PAD_NAMES[pad]}`
+  const pad = state.nearestPad >= 0 ? state.nearestPad : 1
+  return `Meet at the ${PAD_NAMES[pad]} (${PAD_WHERE[pad]})`
 }
 
 /**

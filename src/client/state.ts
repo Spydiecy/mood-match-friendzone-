@@ -29,6 +29,8 @@ export interface PayoutView {
   base: number
   combo: number
   miniGame: number
+  /** Bonus for circle size. */
+  groupSize: number
   featuredMultiplier: number
   streakBonus: number
   total: number
@@ -43,6 +45,8 @@ export interface PayoutView {
 /** A read-only view of one pad, derived from synced components each frame. */
 export interface PadView {
   padIndex: number
+  /** Group size this pad needs to start a round. */
+  required: number
   circleId: number
   phase: CirclePhase
   game: MiniGameKind

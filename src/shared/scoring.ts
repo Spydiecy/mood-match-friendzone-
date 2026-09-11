@@ -8,9 +8,11 @@
 
 import {
   FEATURED_MULTIPLIER,
+  MIN_CIRCLE_PLAYERS,
   POINTS_BASE,
   POINTS_COMBO,
   POINTS_MINIGAME,
+  POINTS_PER_EXTRA_MEMBER,
   STREAK_MAX_BONUS,
   STREAK_STEP
 } from './config'
@@ -24,6 +26,8 @@ export interface ScoreBreakdown {
   combo: number
   /** Mini-game success bonus. */
   miniGame: number
+  /** Bonus for each member beyond the second. */
+  groupSize: number
   /** 1, or FEATURED_MULTIPLIER when the player holds the featured emotion. */
   featuredMultiplier: number
   /** Fractional streak bonus, e.g. 0.15 means +15%. */
@@ -44,6 +48,13 @@ export interface ScoreInput {
   featuredEmotion: EmotionId
   /** Consecutive days played, 1 for a first day. */
   streakDays: number
+  /**
+   * How many players were in the circle.
+   *
+   * Bigger circles pay more, which is what gives the Trio and Squad pads a reason
+   * to exist: they are harder to assemble, so they are worth more.
+   */
+  memberCount: number
 }
 
 /**
@@ -68,24 +79,31 @@ export function computeScore(input: ScoreInput): ScoreBreakdown {
   const base = POINTS_BASE
   const combo = input.comboMatched ? POINTS_COMBO : 0
   const miniGame = input.miniGameSuccess ? POINTS_MINIGAME : 0
+  const groupSize = groupSizeBonus(input.memberCount)
 
   const featuredMultiplier =
     input.playerEmotion === input.featuredEmotion ? FEATURED_MULTIPLIER : 1
   const streakBonus = streakBonusFor(input.streakDays)
 
-  const subtotal = (base + combo + miniGame) * featuredMultiplier
+  const subtotal = (base + combo + miniGame + groupSize) * featuredMultiplier
   const total = Math.round(subtotal * (1 + streakBonus))
 
-  return { base, combo, miniGame, featuredMultiplier, streakBonus, total }
+  return { base, combo, miniGame, groupSize, featuredMultiplier, streakBonus, total }
+}
+
+/** Bonus for each member beyond the minimum. Never negative. */
+export function groupSizeBonus(memberCount: number): number {
+  const extra = Math.max(0, Math.floor(memberCount) - MIN_CIRCLE_PLAYERS)
+  return extra * POINTS_PER_EXTRA_MEMBER
 }
 
 /**
  * Best-case payout for a circle, used by the HUD to show players what is on the
  * table before they commit ("up to N points").
  */
-export function maxPossibleScore(streakDays: number): number {
+export function maxPossibleScore(streakDays: number, memberCount = MIN_CIRCLE_PLAYERS): number {
   return Math.round(
-    (POINTS_BASE + POINTS_COMBO + POINTS_MINIGAME) *
+    (POINTS_BASE + POINTS_COMBO + POINTS_MINIGAME + groupSizeBonus(memberCount)) *
       FEATURED_MULTIPLIER *
       (1 + streakBonusFor(streakDays))
   )

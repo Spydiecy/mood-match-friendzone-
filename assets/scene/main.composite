@@ -1313,7 +1313,7 @@
         },
         "522": {
           "json": {
-            "text": "A PAD",
+            "text": "SQUAD - North\n0/0",
             "fontSize": 1.0,
             "textColor": {
               "r": 1,
@@ -1325,7 +1325,7 @@
         },
         "523": {
           "json": {
-            "text": "B PAD",
+            "text": "DUO - West\n0/0",
             "fontSize": 1.0,
             "textColor": {
               "r": 1,
@@ -1337,7 +1337,7 @@
         },
         "524": {
           "json": {
-            "text": "C PAD",
+            "text": "TRIO - East\n0/0",
             "fontSize": 1.0,
             "textColor": {
               "r": 1,
@@ -1361,7 +1361,7 @@
         },
         "527": {
           "json": {
-            "text": "MOOD MATCH\nstand on a pad with someone\nand tap Form Circle",
+            "text": "MOOD MATCH\njust stand in a ring with others\ncircles start on their own",
             "fontSize": 0.95,
             "textColor": {
               "r": 1,
