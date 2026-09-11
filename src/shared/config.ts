@@ -126,17 +126,53 @@ export const COUNTDOWN_MS = 3000
 /** How long the result panel stays up before the circle dissolves. */
 export const RESULT_MS = 5000
 
-/** Rhythm Tap: milliseconds between beats. */
-export const RHYTHM_BEAT_MS = 1000
+/**
+ * Rhythm Tap: milliseconds between the FIRST beats of a round.
+ *
+ * The grid accelerates from here down to `RHYTHM_BEAT_MIN_MS` - see `shared/rhythm.ts`.
+ * A fixed metronome was solvable in two beats and then ran itself, so the opening gap
+ * only has to be wide enough to teach the tempo.
+ */
+export const RHYTHM_BEAT_MS = 950
 
-/** Rhythm Tap: how far off a beat a tap may be and still count (ms). */
-export const RHYTHM_TOLERANCE_MS = 320
+/**
+ * Rhythm Tap: milliseconds between the LAST beats of a round.
+ *
+ * The floor of the ramp. Kept above ~600ms because below that the round stops being a
+ * rhythm test and becomes a tapping-speed test, which Tap Race already covers.
+ */
+export const RHYTHM_BEAT_MIN_MS = 620
+
+/**
+ * Rhythm Tap: how far off a beat a tap may be and still count (ms).
+ *
+ * Must stay well under half the TIGHTEST gap in the ramp, and that has to hold after
+ * Calm's tolerance multiplier is applied - otherwise the windows of adjacent beats touch
+ * at the fast end of the round, every instant counts as on-beat, and mashing scores as
+ * well as playing.
+ *
+ * This is what pushed the value down from 260: at the ramp's floor the gap is ~657ms, so
+ * the half-gap is ~328ms, and a Calm player's 1.6x multiplier turned 260 into 416 - a
+ * window wider than the space between beats. `check-logic` asserts the margin including
+ * the multiplier.
+ */
+export const RHYTHM_TOLERANCE_MS = 195
 
 /** Rhythm Tap: share of possible beats the group must hit to succeed. */
-export const RHYTHM_SUCCESS_RATIO = 0.6
+export const RHYTHM_SUCCESS_RATIO = 0.68
 
 /** Hold Zones: milliseconds of *everyone holding at once* needed to succeed. */
-export const HOLD_REQUIRED_MS = 6500
+export const HOLD_REQUIRED_MS = 7200
+
+/**
+ * Hold Zones: credit deducted from the group total when the chain breaks.
+ *
+ * Without a penalty the optimal strategy was to release whenever holding got boring
+ * and re-grab later; the total only ever went up, so nothing was lost. Losing a slice
+ * of progress makes an early release actually cost something, which is what turns the
+ * round into the "nobody let go" moment it is meant to be.
+ */
+export const HOLD_BREAK_PENALTY_MS = 400
 
 /**
  * Hold Zones: how often a holding client re-asserts its hold.
@@ -154,7 +190,29 @@ export const HOLD_KEEPALIVE_MS = 350
 export const HOLD_EXPIRY_MS = 900
 
 /** Color Match: how many steps in the sequence. */
-export const COLOR_SEQUENCE_LENGTH = 4
+export const COLOR_SEQUENCE_LENGTH = 6
+
+/**
+ * Color Match: how long the sequence stays visible at the start of the round.
+ *
+ * Shared rather than client-only so `check-logic` can assert that the reveal plus the
+ * time needed to tap every step still fits inside `MINIGAME_DURATION_MS`. Lengthening
+ * the sequence without shortening the reveal is exactly the change that would quietly
+ * make the round unwinnable.
+ */
+export const SEQUENCE_REVEAL_MS = 2200
+
+/** Color Match: how many distinct colors the pads offer. */
+export const COLOR_PALETTE_SIZE = 5
+
+/**
+ * Color Match: a wrong tap knocks the group back this many steps.
+ *
+ * Previously a mistake only cleared that step's partial progress, so the sequence could
+ * be brute-forced by tapping every pad at every step. Losing ground makes reading the
+ * reveal the cheaper option.
+ */
+export const COLOR_MISTAKE_SETBACK = 1
 
 /** Sync Tap: how long the marker takes to sweep across and back, in ms. */
 export const SYNC_SWEEP_MS = 2000
@@ -170,27 +228,47 @@ export const SYNC_ZONE_HALF_WIDTH = 0.16
  * Generous enough to be achievable over real network latency, tight enough that it
  * cannot be hit by accident.
  */
-export const SYNC_WINDOW_MS = 700
+export const SYNC_WINDOW_MS = 550
 
 /** Sync Tap: successful group syncs needed to clear the round. */
-export const SYNC_TARGET = 3
+export const SYNC_TARGET = 4
+
+/**
+ * Sync Tap: sweep duration at the END of the round, in ms.
+ *
+ * The sweep accelerates from `SYNC_SWEEP_MS` down to this. The zone stays a fixed
+ * fraction of the bar, so a faster sweep means less real time inside it - the round
+ * tightens without the target ever visibly changing size, which keeps it readable.
+ *
+ * Ramped over ELAPSED TIME rather than per sync achieved. Per-sync was the first
+ * design and had to go: the marker is drawn from a pure function of `startsAt` and
+ * `now`, so changing the speed mid-round on an event would teleport the marker to
+ * whatever position the new formula produced at that instant. Ramping on time keeps
+ * the function pure and the motion continuous.
+ */
+export const SYNC_SWEEP_MIN_MS = 1150
 
 /** Tap Race: taps needed to win the race. */
-export const TAP_RACE_TARGET = 24
+export const TAP_RACE_TARGET = 30
 
 /**
  * Reaction: how many cues fire in a round.
  *
- * Sized so the WORST case fits the round: 3 cues x 1600ms max wait = 4.8s of waiting
- * plus reaction time, inside a 10s round. At the previous 4 cues x 2200ms the tail of
- * the delay distribution could not be cleared even with perfect play, which made the
- * round unwinnable through no fault of the players. `check-logic` asserts the fit.
+ * Sized so the WORST case fits the round: 4 cues x 1400ms max wait = 5.6s of waiting
+ * plus reaction time, inside a 10s round. Four cues rather than three because three
+ * left the round decided by a single lucky twitch - a fourth gives a slower player a
+ * real chance to come back, and gives everyone something to do in the last two seconds.
+ *
+ * This was 4 cues x 2200ms once before and had to be cut to 3: the tail of that delay
+ * distribution could not be cleared even with perfect play, which made the round
+ * unwinnable through no fault of the players. Going back to 4 is only safe because the
+ * max delay came down with it. `check-logic` asserts the fit.
  */
-export const REACTION_CUES = 3
+export const REACTION_CUES = 4
 
 /** Reaction: shortest and longest wait before a cue fires, in ms. */
-export const REACTION_MIN_DELAY_MS = 700
-export const REACTION_MAX_DELAY_MS = 1600
+export const REACTION_MIN_DELAY_MS = 550
+export const REACTION_MAX_DELAY_MS = 1400
 
 /**
  * Reaction: abandon a live cue nobody claims after this long.

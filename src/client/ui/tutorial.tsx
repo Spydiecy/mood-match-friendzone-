@@ -141,7 +141,7 @@ function StepCircle() {
       <Paragraph
         value={`Then you all play a ${Math.round(
           MINIGAME_DURATION_MS / 1000
-        )}-second mini-game together: Rhythm Tap, Hold Zones or Color Match. None of them can be cleared by one person carrying the group.`}
+        )}-second mini-game together - one of six, and they all get harder as the round runs. None of them can be cleared by one person carrying the group.`}
         lines={2}
         width={840}
         marginBottom={SPACE.sm}

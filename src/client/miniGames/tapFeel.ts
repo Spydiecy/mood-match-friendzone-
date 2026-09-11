@@ -7,17 +7,19 @@
  * in a rhythm game that is fatal - you cannot find a groove without immediate
  * confirmation.
  *
- * So the client predicts. It knows `startsAt` and the beat interval, which is all
- * the server uses too, so it can judge its own tap on the same rules instantly and
- * light up straight away.
+ * So the client predicts. It knows `startsAt`, and the beat grid in `shared/rhythm.ts`
+ * is all the server uses too, so it can judge its own tap on the same rules instantly
+ * and light up straight away. Both sides call the SAME grid functions - with an
+ * accelerating tempo, two hand-rolled copies of the arithmetic would drift.
  *
  * This is PRESENTATION ONLY. The score still comes from the server, and if the
  * two ever disagree (lag spike, clock drift) the server wins and the displayed
  * total simply corrects itself. Nothing here can award a point.
  */
 
-import { RHYTHM_BEAT_MS, RHYTHM_TOLERANCE_MS } from '../../shared/config'
+import { RHYTHM_TOLERANCE_MS } from '../../shared/config'
 import { toleranceFor } from '../../shared/moodPerks'
+import { beatCount, beatOffset, nearestBeat } from '../../shared/rhythm'
 import { RoundView } from './round'
 
 /** Outcome of the most recent tap. */
@@ -53,12 +55,6 @@ function fresh(circleId: number): TapFeelState {
   }
 }
 
-/** Total beats in a round, derived the same way the server does it. */
-function beatCount(round: RoundView): number {
-  const span = round.endsAt - round.startsAt
-  return Math.max(1, Math.floor(span / RHYTHM_BEAT_MS))
-}
-
 /**
  * Judges a tap locally and returns the verdict.
  *
@@ -77,14 +73,9 @@ export function registerTap(round: RoundView, now: number): TapVerdict {
     return 'miss'
   }
 
-  const total = beatCount(round)
   const elapsed = now - round.startsAt
-
-  let beat = Math.round(elapsed / RHYTHM_BEAT_MS)
-  if (beat < 0) beat = 0
-  if (beat >= total) beat = total - 1
-
-  const offset = Math.abs(elapsed - beat * RHYTHM_BEAT_MS)
+  const beat = nearestBeat(elapsed)
+  const offset = beatOffset(elapsed)
 
   // Scale by the local player's own mood tolerance, exactly as the server does.
   // Without this a Calm player - whose window is 60% wider server-side - was shown
@@ -164,12 +155,12 @@ export type BeatMark = 'hit' | 'missed' | 'current' | 'upcoming'
  * traffic than the feature is worth.
  */
 export function beatHistory(round: RoundView, now: number): BeatMark[] {
-  const total = beatCount(round)
+  const total = beatCount()
   const marks: BeatMark[] = []
 
   // Which beat is live right now, by the same grid the server judges on.
   const elapsed = now - round.startsAt
-  const currentBeat = elapsed < 0 ? -1 : Math.round(elapsed / RHYTHM_BEAT_MS)
+  const currentBeat = elapsed < 0 ? -1 : nearestBeat(elapsed)
 
   for (let beat = 0; beat < total; beat++) {
     if (state.circleId === round.circleId && state.scored.has(beat)) {

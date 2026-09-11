@@ -1,10 +1,16 @@
 /**
  * Mood Match - Rhythm Tap.
  *
- * A ring pulses once a second. Everyone in the circle taps on the beat. The group
- * needs to land 60% of the available taps, counted across all members, so a
- * player who finds the rhythm can carry someone who has not yet - which is what
- * makes it cooperative rather than a solo timing test.
+ * A ring pulses, and everyone in the circle taps on the beat. The group needs to land
+ * a share of the available taps counted across ALL members, so a player who finds the
+ * rhythm can carry someone who has not yet - which is what makes it cooperative rather
+ * than a solo timing test.
+ *
+ * The tempo ACCELERATES through the round. A fixed metronome was solved in two beats
+ * and then played itself; a ramp means the group has to keep re-finding the pulse, and
+ * the last few beats are genuinely hard. The ramp lives in `shared/rhythm.ts` and both
+ * the pulse below and the server's judging read from it, so what you see and what is
+ * scored cannot drift.
  *
  * The pulse animation is driven from the LOCAL clock (offset-corrected against
  * the server heartbeat), so the visual beat matches the beat the server judges.
@@ -12,7 +18,8 @@
 
 import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
 import { Color4 } from '@dcl/sdk/math'
-import { RHYTHM_BEAT_MS, RHYTHM_SUCCESS_RATIO } from '../../shared/config'
+import { RHYTHM_SUCCESS_RATIO } from '../../shared/config'
+import { beatCount, beatPulse, currentInterval } from '../../shared/rhythm'
 import { COLORS, FONT, GLOW, RADIUS, SPACE, TOUCH, emotionColor } from '../ui/theme'
 import { ProgressBar, Row, Text } from '../ui/widgets'
 import { RoundView, countdownSeconds, inCountdown, secondsLeft } from './round'
@@ -20,33 +27,21 @@ import { inputTap } from './input'
 import { Standings } from './standings'
 import { BeatMark, beatHistory, currentVerdict, flashIntensity, tapStreak } from './tapFeel'
 
-/** Beats in a full round. */
-function beatCount(round: RoundView): number {
-  const span = round.endsAt - round.startsAt
-  return Math.max(1, Math.floor(span / RHYTHM_BEAT_MS))
-}
-
-/**
- * How "hot" the beat is right now, 0..1, peaking exactly on the beat.
- * A sharp attack and quick decay reads much more clearly on a small screen than
- * a smooth sine.
- */
-function beatPulse(round: RoundView, now: number): number {
-  if (now < round.startsAt) return 0
-  const phase = ((now - round.startsAt) % RHYTHM_BEAT_MS) / RHYTHM_BEAT_MS
-  return Math.max(0, 1 - phase * 3.2)
-}
-
 /** Target the group has to reach. */
 function targetHits(round: RoundView): number {
-  return Math.ceil(beatCount(round) * Math.max(1, round.members.length) * RHYTHM_SUCCESS_RATIO)
+  return Math.ceil(beatCount() * Math.max(1, round.members.length) * RHYTHM_SUCCESS_RATIO)
+}
+
+/** Beats-per-minute of the CURRENT tempo, so the ramp is something you can read. */
+function currentBpm(round: RoundView, now: number): number {
+  return Math.round(60000 / currentInterval(Math.max(0, now - round.startsAt)))
 }
 
 /** The centre visual: a ring that swells on every beat. */
 export function RhythmTapPanel(props: { round: RoundView }) {
   const round = props.round
   const now = Date.now()
-  const pulse = beatPulse(round, now)
+  const pulse = beatPulse(now - round.startsAt)
 
   // Local, immediate feedback. The server owns the score; this owns the feel.
   const verdict = currentVerdict(now)
@@ -162,10 +157,14 @@ export function RhythmTapPanel(props: { round: RoundView }) {
       </UiEntity>
 
       <Text
-        value={counting ? 'Get ready' : `${secondsLeft(round, now)}s left`}
+        value={
+          counting
+            ? 'Get ready - the beat speeds up'
+            : `${secondsLeft(round, now)}s left  -  ${currentBpm(round, now)} bpm and rising`
+        }
         fontSize={FONT.tiny}
         color={COLORS.textDim}
-        width={420}
+        width={620}
       />
     </UiEntity>
   )
@@ -181,7 +180,7 @@ export function RhythmTapAction(props: { round: RoundView }) {
   const round = props.round
   const now = Date.now()
   const ready = !inCountdown(round, now)
-  const pulse = beatPulse(round, now)
+  const pulse = beatPulse(now - round.startsAt)
   const verdict = currentVerdict(now)
   const flash = flashIntensity(now)
 
@@ -236,4 +235,4 @@ function beatColor(mark: BeatMark, accent: Color4): Color4 {
 
 /** One-line explanation, shown during the countdown and in the tutorial. */
 export const RHYTHM_TAP_BRIEF =
-  'Tap in time with the pulsing ring. Every tap from every player counts.'
+  'Tap in time with the pulsing ring - it gets faster. Every tap from every player counts.'

@@ -2,16 +2,21 @@
  * Mood Match - Hold Zones.
  *
  * Every player holds their own coloured zone. The group's timer only advances
- * while EVERY zone is held at once, so one person letting go stalls everybody.
+ * while EVERY zone is held at once, so one person letting go stalls everybody -
+ * and breaking the chain now COSTS the group a slice of the progress it had.
  * That shared-failure condition is the point: it forces players to call out when
  * they are about to slip.
+ *
+ * The penalty is what gives the round its tension. While the total could only ever
+ * climb, letting go was free: you could release whenever it got dull and re-grab later
+ * with nothing lost, which made a 7-second hold into 7 seconds of nothing happening.
  *
  * The hold is sent as a keepalive rather than a latch (see `input.ts`), so the
  * server drops it the moment a client goes quiet.
  */
 
 import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
-import { HOLD_REQUIRED_MS } from '../../shared/config'
+import { HOLD_BREAK_PENALTY_MS, HOLD_REQUIRED_MS } from '../../shared/config'
 import { getEmotion } from '../../shared/emotions'
 import { COLORS, FONT, RADIUS, SPACE, TOUCH, emotionColor, emotionShade } from '../ui/theme'
 import { Icon, ProgressBar, Row, Text } from '../ui/widgets'
@@ -103,7 +108,10 @@ export function HoldZonesPanel(props: { round: RoundView }) {
             ? `Starting in ${countdownSeconds(round, now)}`
             : everyone
               ? 'All zones held - timer running'
-              : missingNames(round)
+              : // Deliberately not "progress is draining": the penalty is charged once
+                // on the break, not continuously, and telling players otherwise would
+                // have them expect the bar to keep falling while they scramble.
+                `${missingNames(round)} - chain broken`
         }
         fontSize={FONT.small}
         color={everyone ? COLORS.good : COLORS.warn}
@@ -124,12 +132,12 @@ export function HoldZonesPanel(props: { round: RoundView }) {
       <Text
         value={
           counting
-            ? `Hold together for ${Math.round(HOLD_REQUIRED_MS / 1000)}s`
+            ? `Hold together for ${Math.round(HOLD_REQUIRED_MS / 1000)}s - a break costs ${(HOLD_BREAK_PENALTY_MS / 1000).toFixed(1)}s`
             : `${secondsLeft(round, now)}s left`
         }
         fontSize={FONT.tiny}
         color={COLORS.textDim}
-        width={520}
+        width={700}
       />
     </UiEntity>
   )
@@ -203,4 +211,4 @@ export function HoldZonesAction(props: { round: RoundView }) {
 
 /** One-line explanation for the countdown and the tutorial. */
 export const HOLD_ZONES_BRIEF =
-  'Press and hold your zone. The timer only moves while everyone holds at once.'
+  'Press and hold your zone. The timer only moves while everyone holds - a break costs progress.'

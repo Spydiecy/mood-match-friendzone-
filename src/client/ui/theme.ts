@@ -160,7 +160,23 @@ export const ICON = {
   reroll: 'images/icons/reroll.png',
   invite: 'images/icons/invite.png',
   play: 'images/icons/play.png',
-  check: 'images/icons/check.png'
+  check: 'images/icons/check.png',
+
+  /*
+   * One glyph per mini-game.
+   *
+   * Each is a literal picture of the verb - a beat grid, a pressed pad, a colour
+   * sequence, two arrows meeting, a stopwatch, a lightning bolt - so a player can tell
+   * which game a practice card or a countdown is offering at a glance, in a language
+   * they do not have to read. `gameIcon()` in `miniGames/index.tsx` maps the enum onto
+   * these; nothing outside that helper should index this by hand.
+   */
+  gameRhythm: 'images/icons/game-rhythm.png',
+  gameHold: 'images/icons/game-hold.png',
+  gameColor: 'images/icons/game-color.png',
+  gameSync: 'images/icons/game-sync.png',
+  gameRace: 'images/icons/game-race.png',
+  gameReaction: 'images/icons/game-reaction.png'
 } as const
 
 /** Subtle background texture used behind mini-game panels. */

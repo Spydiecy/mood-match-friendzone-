@@ -8,6 +8,7 @@
 
 import ReactEcs from '@dcl/sdk/react-ecs'
 import { MINIGAME_COUNT, MiniGameKind } from '../../shared/types'
+import { ICON } from '../ui/theme'
 
 /** Every mini-game, for the practice picker. */
 export const ALL_MINI_GAMES: MiniGameKind[] = Array.from(
@@ -49,6 +50,36 @@ export function miniGameName(game: MiniGameKind): string {
       return 'Reaction'
     default:
       return 'Mini Game'
+  }
+}
+
+/**
+ * Path to the glyph for a mini-game.
+ *
+ * The single place the enum maps onto artwork, so adding a game means adding one case
+ * here rather than hunting for icon references across the picker, the countdown card and
+ * the round header.
+ *
+ * Icons matter more than usual in this scene: names like "Sync Tap" and "Tap Race" are
+ * hard to tell apart at a glance and read as noise to anyone who is not fluent in
+ * English, while a picture of two arrows meeting versus a stopwatch is immediate.
+ */
+export function gameIcon(game: MiniGameKind): string {
+  switch (game) {
+    case MiniGameKind.RhythmTap:
+      return ICON.gameRhythm
+    case MiniGameKind.HoldZones:
+      return ICON.gameHold
+    case MiniGameKind.ColorMatch:
+      return ICON.gameColor
+    case MiniGameKind.SyncTap:
+      return ICON.gameSync
+    case MiniGameKind.TapRace:
+      return ICON.gameRace
+    case MiniGameKind.Reaction:
+      return ICON.gameReaction
+    default:
+      return ICON.play
   }
 }
 

@@ -2,11 +2,15 @@
  * Mood Match - Sync Tap.
  *
  * A marker sweeps back and forth across a bar. When it is inside the target zone,
- * EVERY player has to tap within the same short window. Three group syncs clears
- * the round.
+ * EVERY player has to tap within the same short window. `SYNC_TARGET` group syncs
+ * clears the round.
  *
- * This is the most purely cooperative of the four games: an individual cannot make
- * any progress alone, because a sync only counts when everyone's tap lands together.
+ * The sweep ACCELERATES through the round, so the last sync is aimed at a target the
+ * marker crosses in about half the time the first one did. At a constant speed the
+ * timing was learnable in two passes and the rest of the round was a formality.
+ *
+ * This is the most purely cooperative of the games: an individual cannot make any
+ * progress alone, because a sync only counts when everyone's tap lands together.
  * It reliably makes people count down out loud, which is exactly the behaviour the
  * scene exists to produce.
  *
@@ -124,8 +128,8 @@ export function SyncTapPanel(props: { round: RoundView }) {
       <Text
         value={
           counting
-            ? `All ${round.members.length} of you tap at once, ${SYNC_TARGET} times`
-            : `${syncs}/${SYNC_TARGET} synced  -  ${secondsLeft(round, now)}s left`
+            ? `All ${round.members.length} of you tap at once, ${SYNC_TARGET} times - it speeds up`
+            : `${syncs}/${SYNC_TARGET} synced  -  ${secondsLeft(round, now)}s left  -  speeding up`
         }
         fontSize={FONT.tiny}
         color={COLORS.textDim}
@@ -183,4 +187,4 @@ export function SyncTapAction(props: { round: RoundView }) {
 /** One-line explanation for the countdown and the tutorial. */
 // Deliberately does not quote a slack figure: the window is scaled per player by
 // their mood tolerance, so a single number would be wrong for a Calm player.
-export const SYNC_TAP_BRIEF = `Everyone taps at the same moment while the marker is in the green zone. ${SYNC_TARGET} syncs to clear. Count down out loud.`
+export const SYNC_TAP_BRIEF = `Everyone taps at the same moment while the marker is in the green zone. ${SYNC_TARGET} syncs to clear, and the sweep speeds up. Count down out loud.`

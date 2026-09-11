@@ -3,14 +3,18 @@
  *
  * The circle is shown a colour sequence for a couple of seconds, then it hides.
  * Players reproduce it together: a step only completes once EVERY member has
- * tapped that colour, and one wrong tap wipes the group's progress on the current
- * step.
+ * tapped that colour, and one wrong tap costs the group a step of progress.
  *
  * That rule is what makes it a conversation. Somebody has to say "green next",
  * and everyone has to agree before the step clears.
  *
- * The palette is built from the circle's own emotion colours (see
- * `colorPalette`), capped at four options so every target stays thumb-sized.
+ * A wrong tap used to only clear the current step's partial progress, which meant a
+ * group could tap every pad at every step and advance on whichever happened to be
+ * right - the reveal was optional. Losing ground makes remembering the cheaper option.
+ *
+ * The palette is built from the circle's own emotion colours (see `colorPalette`),
+ * capped at five options: enough that a guess is a real risk, few enough that every
+ * target stays thumb-sized.
  */
 
 import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
@@ -61,7 +65,9 @@ export function ColorMatchPanel(props: { round: RoundView }) {
       uiTransform={{
         width: '100%',
         // head 30 + sequence 60 + confirmations 40 + step dots 20 + standings 50 +
-        // bar 18 + caption 25.
+        // bar 18 + caption 25. Unchanged by the longer sequence: the swatch and dot
+        // rows grow sideways, not downwards - `check-logic` asserts they still fit
+        // the 780-wide panel.
         height: 246,
         flexDirection: 'column',
         alignItems: 'center',
@@ -186,7 +192,7 @@ export function ColorMatchPanel(props: { round: RoundView }) {
           counting
             ? 'Tap the colours in order, together'
             : wrongTap
-              ? 'Wrong colour - the step resets, try again together'
+              ? 'Wrong colour - back a step, agree before tapping'
               : myTapConfirmed(round) && round.members.length > 1
                 ? 'You are in - waiting for the others'
                 : `${secondsLeft(round, now)}s left`
@@ -206,7 +212,7 @@ function shortName(name: string): string {
   return name.slice(0, 6) + '.'
 }
 
-/** The bottom-centre input: up to four large colour targets. */
+/** The bottom-centre input: up to five large colour targets. */
 export function ColorMatchAction(props: { round: RoundView }) {
   const round = props.round
   const now = Date.now()
@@ -257,4 +263,4 @@ export function ColorMatchAction(props: { round: RoundView }) {
 
 /** One-line explanation for the countdown and the tutorial. */
 export const COLOR_MATCH_BRIEF =
-  'Watch the colour sequence, then everyone taps it back in order, together.'
+  'Watch the colour sequence, then everyone taps it back in order. A wrong tap costs a step.'

@@ -16,11 +16,13 @@
  */
 
 import {
+  COLOR_MISTAKE_SETBACK,
+  COLOR_PALETTE_SIZE,
   COLOR_SEQUENCE_LENGTH,
+  HOLD_BREAK_PENALTY_MS,
   HOLD_REQUIRED_MS,
   MINIGAME_DURATION_MS,
   RESULT_MS,
-  RHYTHM_BEAT_MS,
   RHYTHM_SUCCESS_RATIO,
   RHYTHM_TOLERANCE_MS,
   REACTION_CUES,
@@ -31,6 +33,7 @@ import {
 } from '../shared/config'
 import { NoticeTone } from '../shared/messages'
 import { EMOTION_COUNT, EmotionId, MINIGAME_COUNT, MiniGameKind } from '../shared/types'
+import { beatCount, beatOffset, nearestBeat } from '../shared/rhythm'
 import { markerInZone } from '../shared/syncTap'
 import { playSfx } from './audio'
 import { PracticeState, showNotice, state } from './state'
@@ -51,10 +54,6 @@ function practiceCueLive(practice: PracticeState, now: number): boolean {
   return practice.cueAt > 0 && now >= practice.cueAt
 }
 
-/** Beats a practice round contains. Matches the server's grid. */
-function beatCount(): number {
-  return Math.floor(MINIGAME_DURATION_MS / RHYTHM_BEAT_MS)
-}
 
 /** Which beats the player has already scored, so mashing gains nothing. */
 let scoredBeats = new Set<number>()
@@ -146,11 +145,25 @@ export function inPractice(): boolean {
   return state.practice !== null
 }
 
-/** A random colour sequence drawn from all emotions. */
+/**
+ * A random colour sequence for practice.
+ *
+ * Drawn from a palette of exactly `COLOR_PALETTE_SIZE` distinct emotions, mirroring the
+ * server. Drawing freely from all six was fine while the sequence was four steps long -
+ * it could never contain more than four distinct colours - but at six steps it could
+ * produce six, and `colorPalette` renders one button per distinct colour present. The
+ * practice panel would have drawn six targets where the real game draws five.
+ */
 function buildPracticeSequence(): EmotionId[] {
+  const palette: EmotionId[] = []
+  const offset = Math.floor(Math.random() * EMOTION_COUNT)
+  for (let i = 0; i < EMOTION_COUNT && palette.length < COLOR_PALETTE_SIZE; i++) {
+    palette.push(((offset + i) % EMOTION_COUNT) as EmotionId)
+  }
+
   const sequence: EmotionId[] = []
   for (let i = 0; i < COLOR_SEQUENCE_LENGTH; i++) {
-    sequence.push(Math.floor(Math.random() * EMOTION_COUNT) as EmotionId)
+    sequence.push(palette[Math.floor(Math.random() * palette.length)])
   }
   return sequence
 }
@@ -204,13 +217,9 @@ export function practiceTap(): void {
     return
   }
 
-  const total = beatCount()
-  let beat = Math.round((now - practice.startsAt) / RHYTHM_BEAT_MS)
-  if (beat < 0) beat = 0
-  if (beat >= total) beat = total - 1
-
-  const offset = Math.abs(now - practice.startsAt - beat * RHYTHM_BEAT_MS)
-  if (offset > RHYTHM_TOLERANCE_MS) return
+  const elapsed = now - practice.startsAt
+  const beat = nearestBeat(elapsed)
+  if (beatOffset(elapsed) > RHYTHM_TOLERANCE_MS) return
   if (scoredBeats.has(beat)) return
 
   scoredBeats.add(beat)
@@ -222,6 +231,15 @@ export function practiceTap(): void {
 export function practiceHold(holding: boolean): void {
   const practice = state.practice
   if (!practice || practice.finished) return
+
+  // Releasing costs the same slice of progress the server charges a group for
+  // breaking the chain, so practice teaches the real lesson: do not let go.
+  // Charged on the transition only, so a held button is never penalised.
+  if (practice.holding && !holding && Date.now() >= practice.startsAt) {
+    practice.allHoldMs = Math.max(0, practice.allHoldMs - HOLD_BREAK_PENALTY_MS)
+    playSfx('fail')
+  }
+
   practice.holding = holding
 }
 
@@ -236,10 +254,9 @@ export function practiceColorTap(emotion: EmotionId): void {
     practice.step++
     playSfx('tap')
   } else {
-    // The server's real penalty is "the group must re-tap the current step",
-    // which is meaningless solo - so practice costs one step instead. Deliberately
-    // NOT a reset to zero, which used to make the trainer harsher than the game.
-    practice.step = Math.max(0, practice.step - 1)
+    // The server now applies the same setback to the whole group, so practice and the
+    // real game finally agree on what a mistake costs.
+    practice.step = Math.max(0, practice.step - COLOR_MISTAKE_SETBACK)
     playSfx('fail')
   }
 }

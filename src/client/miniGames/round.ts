@@ -9,7 +9,7 @@
  * against `Date.now()`.
  */
 
-import { MINIGAME_DURATION_MS } from '../../shared/config'
+import { COLOR_PALETTE_SIZE, MINIGAME_DURATION_MS } from '../../shared/config'
 import { EMOTION_COUNT, EmotionId, MiniGameKind } from '../../shared/types'
 import { PadView, PracticeState } from '../state'
 import { toLocalTime } from '../utils/serverClock'
@@ -137,9 +137,13 @@ export const ROUND_MS = MINIGAME_DURATION_MS
 /**
  * Builds the tap palette for Color Match.
  *
- * Only the colours actually used in the sequence, padded with decoys up to four
- * options. Four is the ceiling on purpose: more than that and the targets get too
- * small to hit reliably with a thumb.
+ * Only the colours actually used in the sequence, padded with decoys up to
+ * `COLOR_PALETTE_SIZE` options.
+ *
+ * Five is the ceiling on purpose. Four was too forgiving - with only four choices a
+ * half-remembered step could be guessed at decent odds - but the targets still have to
+ * stay thumb-sized, and five at 92px plus margins is the most that fits the action row
+ * comfortably. Six is where they start shrinking below a reliable touch size.
  *
  * Sorted by emotion id so the buttons never move between frames - a shifting
  * button is unusable on a touch screen.
@@ -150,7 +154,11 @@ export function colorPalette(sequence: EmotionId[]): EmotionId[] {
     if (present.indexOf(emotion) === -1) present.push(emotion)
   }
 
-  for (let candidate = 0; candidate < EMOTION_COUNT && present.length < 4; candidate++) {
+  for (
+    let candidate = 0;
+    candidate < EMOTION_COUNT && present.length < COLOR_PALETTE_SIZE;
+    candidate++
+  ) {
     if (present.indexOf(candidate as EmotionId) === -1) {
       present.push(candidate as EmotionId)
     }
@@ -162,5 +170,8 @@ export function colorPalette(sequence: EmotionId[]): EmotionId[] {
 /**
  * How long the sequence stays visible at the start of a Color Match round.
  * After this the players are working from memory and from each other.
+ *
+ * Re-exported from shared config so the existing panel imports keep working while the
+ * value itself lives where `check-logic` can assert it against the round length.
  */
-export const SEQUENCE_REVEAL_MS = 2600
+export { SEQUENCE_REVEAL_MS } from '../../shared/config'

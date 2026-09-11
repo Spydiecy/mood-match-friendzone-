@@ -20,10 +20,10 @@ import { evaluateCombo, getEmotion } from '../../shared/emotions'
 import { describeMoodBalance, getPerk } from '../../shared/moodPerks'
 import { EmotionId } from '../../shared/types'
 import { PAD_NAMES, padFillFor } from '../circle'
-import { miniGameBrief, miniGameName } from '../miniGames'
+import { gameIcon, miniGameBrief, miniGameName } from '../miniGames'
 import { state } from '../state'
 import { BUDGET, COLORS, FONT, RADIUS, SPACE, emotionColor } from './theme'
-import { EmotionBadge, Panel, ProgressBar, Row, Text } from './widgets'
+import { EmotionBadge, Icon, Panel, ProgressBar, Row, Text } from './widgets'
 
 /**
  * The full-width countdown card shown while a circle is in its Countdown phase.
@@ -96,12 +96,20 @@ export function StartingCard() {
         width={200}
       />
 
-      <Text
-        value={`${miniGameName(pad.game)}  -  ${PAD_NAMES[pad.padIndex]}`}
-        fontSize={FONT.heading}
-        color={COLORS.text}
-        width={640}
-      />
+      {/*
+        Which game, as a picture as well as a name. This is the one screen where the
+        player has three seconds to work out what they are about to do, so the glyph is
+        doing real work: it is recognised before the words are read.
+      */}
+      <Row width="100%" justifyContent="center">
+        <Icon src={gameIcon(pad.game)} size={34} color={COLORS.text} />
+        <Text
+          value={`${miniGameName(pad.game)}  -  ${PAD_NAMES[pad.padIndex]}`}
+          fontSize={FONT.heading}
+          color={COLORS.text}
+          width={600}
+        />
+      </Row>
 
       {/* Combo and the racer/supporter split share one line, to stay inside the
           centre budget. */}

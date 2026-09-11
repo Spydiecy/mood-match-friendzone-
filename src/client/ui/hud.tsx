@@ -36,6 +36,7 @@ import {
   ALL_MINI_GAMES,
   MiniGameAction,
   MiniGamePanel,
+  gameIcon,
   isCompetitive,
   miniGameName
 } from '../miniGames'
@@ -277,29 +278,43 @@ export function CenterStage() {
   return <ComboPreview />
 }
 
+/** Width of one card in the practice picker, including its margins. */
+const PICK_CARD_WIDTH = 150
+
 /**
  * Lets the player pick which mini-game to practise.
  *
  * A random game was frustrating for practice specifically: the whole reason to open
  * it is to rehearse the one you keep losing.
+ *
+ * Each card leads with the game's icon. The names are the weakest part of this screen -
+ * "Sync Tap" and "Tap Race" are one word apart and mean nothing until you have played
+ * both - so the glyph does the identifying and the text confirms it.
+ *
+ * WIDTHS: six cards at `PICK_CARD_WIDTH` plus 2x`SPACE.xs` margins is
+ * 6 x 158 = 948, inside the 972 of usable width a 1000-wide panel leaves after padding.
+ * The panel was 720 while the cards were 158 wide, so the last two spilled off the
+ * right-hand edge and two of the six games were simply unreachable. Any change to the
+ * card width or the game count has to be checked against this sum; `check-logic`
+ * asserts it.
  */
 function PracticePicker() {
   return (
-    <Panel width={720} padding={SPACE.md} textured>
-      <Text value="Practise which game?" fontSize={FONT.heading} color={COLORS.text} width={640} />
+    <Panel width={1000} maxHeight={BUDGET.centreMax} padding={SPACE.md} textured>
+      <Text value="Practise which game?" fontSize={FONT.heading} color={COLORS.text} width={900} />
       <Text
         value="Unscored - real circles need other players"
         fontSize={FONT.tiny}
         color={COLORS.textDim}
-        width={640}
+        width={900}
       />
       <Row width="100%" justifyContent="center" marginTop={SPACE.sm}>
         {ALL_MINI_GAMES.map((game) => (
           <UiEntity
             key={`pick-game-${game}`}
             uiTransform={{
-              width: 158,
-              height: 84,
+              width: PICK_CARD_WIDTH,
+              height: 104,
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
@@ -313,7 +328,8 @@ function PracticePicker() {
               startPractice(game)
             }}
           >
-            <Text value={miniGameName(game)} fontSize={FONT.small} color={COLORS.text} />
+            <Icon src={gameIcon(game)} size={40} color={COLORS.text} />
+            <Text value={miniGameName(game)} fontSize={FONT.tiny} color={COLORS.text} />
             <Text
               value={`best ${Math.round(practiceBest(game) * 100)}%`}
               fontSize={FONT.tiny}
@@ -344,12 +360,18 @@ function ActiveRound() {
 
   return (
     <Panel width={780} maxHeight={BUDGET.centreMax} padding={SPACE.md} textured>
+      {/*
+        The game's glyph sits next to its name so a player glancing back at the screen
+        mid-round can re-orient without reading. Under time pressure the icon lands
+        noticeably faster than the words do.
+      */}
       <Row width="100%" justifyContent="center">
+        <Icon src={gameIcon(pad.game)} size={34} color={COLORS.text} />
         <Text
           value={`${miniGameName(pad.game)}  -  ${PAD_NAMES[pad.padIndex]}  ${pad.members.length}/${pad.required}`}
           fontSize={FONT.heading}
           color={COLORS.text}
-          width={620}
+          width={580}
         />
       </Row>
 
@@ -558,6 +580,18 @@ function PayoutPanel() {
       )}
     </Panel>
   )
+}
+
+/**
+ * Abbreviates a compass name so it fits a directory chip.
+ * "SouthEast" is 9 characters and collided with its neighbour at five pads.
+ */
+function compass(where: string): string {
+  if (where === 'SouthEast') return 'SE'
+  if (where === 'SouthWest') return 'SW'
+  if (where === 'NorthEast') return 'NE'
+  if (where === 'NorthWest') return 'NW'
+  return where.slice(0, 1)
 }
 
 /** Keeps a winner's name short in the result headline. */
@@ -807,6 +841,12 @@ function PadDirectory() {
       }}
       uiBackground={{ color: COLORS.panel }}
     >
+      {/*
+        Sized to FIT. With five pads the previous 150px chips needed 770px inside a
+        470px row, so the captions collided and rendered as "Duo - SouthDuo - South".
+        88px each plus margins is 460 of 470, and the compass name is abbreviated so
+        the label fits its chip.
+      */}
       {PAD_NAMES.map((name, index) => {
         const fill = padFillFor(index)
         const active = fill.here > 0
@@ -814,7 +854,7 @@ function PadDirectory() {
           <UiEntity
             key={`dir-${index}`}
             uiTransform={{
-              width: 150,
+              width: 88,
               height: 74,
               flexDirection: 'column',
               alignItems: 'center',
@@ -832,7 +872,7 @@ function PadDirectory() {
               color={active ? COLORS.good : COLORS.text}
             />
             <Text
-              value={`${name.replace(' Pad', '')} - ${PAD_WHERE[index]}`}
+              value={`${name.replace(' Pad', '')} ${compass(PAD_WHERE[index])}`}
               fontSize={FONT.tiny}
               color={COLORS.textDim}
             />

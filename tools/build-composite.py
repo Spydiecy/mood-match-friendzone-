@@ -144,7 +144,7 @@ def text(entity, value, size, rgb=(1, 1, 1)):
             "textColor": {"r": r, "g": g, "b": b, "a": 1},
             # An outline is what makes in-world text legible against a bright sky
             # or a pale floor. Without it the pillar labels washed out completely.
-            "outlineWidth": 0.18,
+            "outlineWidth": 0.25,
             "outlineColor": {"r": 0.02, "g": 0.02, "b": 0.05},
         }
     }
@@ -210,7 +210,7 @@ material(font_crystal, (0.29, 0.62, 1.0), emissive=1.8, roughness=0.25)
 
 featured_sign = new_entity("FeaturedSign")
 transform(featured_sign, (CENTER[0], 3.5, CENTER[1]))
-text(featured_sign, "FEATURED TODAY", 1.3, (0.29, 0.62, 1.0))
+text(featured_sign, "FEATURED TODAY", 1.8, (0.29, 0.62, 1.0))
 billboard(featured_sign)
 
 # --- Mood Pads --------------------------------------------------------------
@@ -242,7 +242,7 @@ for (label, tier, required, where, angle), (_, x, z) in zip(PADS, pad_points):
     pad_label = new_entity(f"PadLabel_{label}")
     transform(pad_label, (x, 3.0, z))
     # Overwritten every quarter second at runtime with the live "n/required".
-    text(pad_label, f"{tier} - {where}\n0/{required}", 1.5)
+    text(pad_label, f"{tier} - {where}\n0/{required}", 2.1)
     billboard(pad_label)
 
 # --- Leaderboard board ------------------------------------------------------
@@ -266,7 +266,7 @@ board_sign = new_entity("LeaderboardSign")
 # out MIRRORED ("SDOOM POT"). Billboarding removes the guesswork entirely: the text
 # always turns to face whoever is reading it, and stays upright.
 transform(board_sign, (CENTER[0], 3.0, BOARD_Z - 0.45))
-text(board_sign, "TOP MOODS", 1.5)
+text(board_sign, "TOP MOODS", 2.4)
 billboard(board_sign)
 
 welcome = new_entity("WelcomeSign")
@@ -274,7 +274,7 @@ transform(welcome, (CENTER[0], 2.6, 6.2))
 text(
     welcome,
     "MOOD MATCH\nstand in a ring with others\ncircles start on their own",
-    1.15,
+    1.5,
 )
 billboard(welcome)
 
@@ -296,9 +296,9 @@ for index, (emotion_name, r, g, b) in enumerate(EMOTIONS):
     material(cap, (r, g, b), emissive=2.2, roughness=0.2)
 
     plate = new_entity(f"EmotionLabel_{index}")
-    transform(plate, (x, 5.3, z))
+    transform(plate, (x, 5.9, z))
     # Doubled from the previous size: at the old scale these were unreadable.
-    text(plate, emotion_name.upper(), 1.6, (r, g, b))
+    text(plate, emotion_name.upper(), 2.4, (r, g, b))
     billboard(plate)
 
 # --- Perimeter monoliths ----------------------------------------------------

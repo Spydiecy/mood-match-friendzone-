@@ -18,8 +18,11 @@ import { Entity, engine } from '@dcl/sdk/ecs'
 import {
   CIRCLE_PROXIMITY,
   CUE_EXPIRY_MS,
+  COLOR_MISTAKE_SETBACK,
+  COLOR_PALETTE_SIZE,
   COLOR_SEQUENCE_LENGTH,
   COUNTDOWN_MS,
+  HOLD_BREAK_PENALTY_MS,
   HOLD_EXPIRY_MS,
   HOLD_REQUIRED_MS,
   MAX_CIRCLE_PLAYERS,
@@ -30,7 +33,6 @@ import {
   PAD_RADIUS,
   PROGRESS_PUSH_MS,
   RESULT_MS,
-  RHYTHM_BEAT_MS,
   RHYTHM_SUCCESS_RATIO,
   RHYTHM_TOLERANCE_MS,
   REACTION_CUES,
@@ -42,6 +44,7 @@ import {
 } from '../shared/config'
 import { requiredForPad } from '../shared/config'
 import { applyMoodPerk, toleranceFor } from '../shared/moodPerks'
+import { beatCount, beatOffset, nearestBeat } from '../shared/rhythm'
 import { markerInZone } from '../shared/syncTap'
 import { evaluateCombo } from '../shared/emotions'
 import { NoticeTone, RefusalCode } from '../shared/messages'
@@ -115,6 +118,13 @@ interface PadRuntime {
   holdSeenAt: number[]
   /** Accumulated ms during which EVERY member was holding. */
   allHoldMs: number
+  /**
+   * Whether every member was holding as of the previous tick.
+   *
+   * Exists only so the break penalty fires ONCE per break, on the falling edge, rather
+   * than every tick the chain is down.
+   */
+  holdChainLive: boolean
 
   /* Competitive scoring -------------------------------------------------- */
   /**
@@ -249,6 +259,7 @@ export function initCircles(
       holdMask: 0,
       holdSeenAt: [],
       allHoldMs: 0,
+      holdChainLive: false,
       memberScore: [],
       perkCounter: [],
       taps: [],
@@ -389,25 +400,20 @@ export function handlePlayerLeft(record: PlayerRecord): void {
 /* Mini-game judging                                                          */
 /* -------------------------------------------------------------------------- */
 
-/** Total beats in one Rhythm Tap round. */
-function beatCount(): number {
-  return Math.floor(MINIGAME_DURATION_MS / RHYTHM_BEAT_MS)
-}
-
 /**
- * Judges a Rhythm Tap input against the server's own beat grid.
- * A member can only score each beat once, so mashing gains nothing.
+ * Judges a Rhythm Tap input against the shared, ACCELERATING beat grid.
+ *
+ * A member can only score each beat once, so mashing gains nothing. The grid comes
+ * from `shared/rhythm.ts` rather than a local `elapsed / interval` calculation - with a
+ * changing interval that arithmetic no longer describes where the beats are, and any
+ * drift between this and the ring the player is watching makes the round unwinnable.
  */
 function judgeRhythmTap(pad: PadRuntime, memberIndex: number, now: number): void {
   const elapsed = now - pad.startsAt
-  const total = beatCount()
 
-  // Nearest beat to the moment the tap actually arrived.
-  let beat = Math.round(elapsed / RHYTHM_BEAT_MS)
-  if (beat < 0) beat = 0
-  if (beat >= total) beat = total - 1
+  const beat = nearestBeat(elapsed)
+  const offset = beatOffset(elapsed)
 
-  const offset = Math.abs(elapsed - beat * RHYTHM_BEAT_MS)
   // Calm's perk widens this window, which is why it is the mood to pick when a
   // group keeps narrowly missing a timing round.
   const tolerance = RHYTHM_TOLERANCE_MS * toleranceFor(pad.memberEmotions[memberIndex] ?? 0)
@@ -434,7 +440,13 @@ function judgeColorTap(pad: PadRuntime, memberIndex: number, tapped: number): vo
   const expected = pad.sequence[pad.step]
   if (tapped !== expected) {
     // Group setback, not an individual one - this is what forces coordination.
+    //
+    // Losing GROUND as well as the partial step is what closes the brute-force hole:
+    // when a mistake only reset `stepMask`, a group could tap all five pads at every
+    // step and advance on the one that happened to be right, never reading the reveal.
+    // Now a guess has a worse expected value than remembering.
     pad.stepMask = 0
+    pad.step = Math.max(0, pad.step - COLOR_MISTAKE_SETBACK)
     return
   }
 
@@ -925,6 +937,7 @@ function startCountdown(pad: PadRuntime, members: PlayerRecord[], now: number): 
   pad.holdMask = 0
   pad.holdSeenAt = new Array<number>(pad.members.length).fill(0)
   pad.allHoldMs = 0
+  pad.holdChainLive = false
   pad.syncTapAt = new Array<number>(pad.members.length).fill(0)
   pad.syncs = 0
   pad.memberScore = new Array<number>(pad.members.length).fill(0)
@@ -968,12 +981,25 @@ function startCountdown(pad: PadRuntime, members: PlayerRecord[], now: number): 
  *
  * Drawn from the circle's own emotion colours where possible, so the puzzle
  * reads as "your group's palette" rather than arbitrary colours. Padded with
- * random emotions when the group is small.
+ * random emotions up to `COLOR_PALETTE_SIZE`.
+ *
+ * The palette is de-duplicated and filled to the full palette size. Previously it was
+ * the raw member emotions padded to three, which meant a duo who both picked Joy played
+ * a sequence drawn from two or three colours while the client still drew five buttons -
+ * two of them provably never used. Filling the palette makes every button a live
+ * possibility, so guessing is genuinely a one-in-five bet.
  */
 function buildColorSequence(memberEmotions: EmotionId[]): EmotionId[] {
-  const palette = memberEmotions.slice()
-  while (palette.length < 3) {
-    palette.push(Math.floor(Math.random() * EMOTION_COUNT) as EmotionId)
+  const palette: EmotionId[] = []
+  for (const emotion of memberEmotions) {
+    if (palette.indexOf(emotion) === -1) palette.push(emotion)
+  }
+
+  // Fill by scanning from a random start so the decoys are not always the lowest ids.
+  const offset = Math.floor(Math.random() * EMOTION_COUNT)
+  for (let i = 0; i < EMOTION_COUNT && palette.length < COLOR_PALETTE_SIZE; i++) {
+    const candidate = ((offset + i) % EMOTION_COUNT) as EmotionId
+    if (palette.indexOf(candidate) === -1) palette.push(candidate)
   }
 
   const sequence: EmotionId[] = []
@@ -1013,9 +1039,22 @@ function tickPlaying(pad: PadRuntime, dtMs: number, now: number): void {
 
     // Only accumulates while EVERY member is holding at once. That shared
     // condition is what makes the game cooperative rather than parallel.
-    if (pad.holdMask === fullMemberMask(pad)) {
+    const everyoneHolding = pad.holdMask === fullMemberMask(pad)
+
+    if (everyoneHolding) {
       pad.allHoldMs += dtMs
+    } else if (pad.holdChainLive) {
+      // The chain just broke. Charge the group for it once, on the transition, so a
+      // release costs a fixed amount rather than draining continuously - a player who
+      // is disconnected or fumbling shouldn't be able to zero the round out.
+      //
+      // Without any penalty the total only ever climbed, so letting go was free and
+      // the round had no tension: everyone could release whenever it got dull and
+      // re-grab later with nothing lost.
+      pad.allHoldMs = Math.max(0, pad.allHoldMs - HOLD_BREAK_PENALTY_MS)
     }
+
+    pad.holdChainLive = everyoneHolding
 
     // Individually, credit every member for the time THEY held, in tenths of a
     // second. The group needs everyone, but the player who never lets go wins.
@@ -1119,6 +1158,7 @@ function resetPad(pad: PadRuntime): void {
   pad.holdMask = 0
   pad.holdSeenAt = []
   pad.allHoldMs = 0
+  pad.holdChainLive = false
   pad.syncTapAt = []
   pad.syncs = 0
   pad.memberScore = []
@@ -1271,9 +1311,9 @@ function writeProgress(pad: PadRuntime, now: number, force: boolean): void {
   // `hits` doubles as the Sync Tap counter: both are "successful actions so far",
   // and reusing the field avoids widening the component for one game.
   progress.hits = pad.game === MiniGameKind.SyncTap ? pad.syncs : pad.hits
-  progress.beatIndex = pad.startsAt
-    ? Math.max(0, Math.floor((now - pad.startsAt) / RHYTHM_BEAT_MS))
-    : 0
+  // Derived from the shared accelerating grid, not `elapsed / interval` - with a
+  // varying interval that division no longer names the right beat.
+  progress.beatIndex = pad.startsAt ? nearestBeat(Math.max(0, now - pad.startsAt)) : 0
   progress.holdMask = pad.holdMask
   progress.step = pad.step
   progress.stepMask = pad.stepMask

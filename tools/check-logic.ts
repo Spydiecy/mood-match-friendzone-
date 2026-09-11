@@ -41,7 +41,12 @@ import {
   toleranceFor
 } from '../src/shared/moodPerks'
 import {
+  COLOR_MISTAKE_SETBACK,
+  COLOR_PALETTE_SIZE,
+  COLOR_SEQUENCE_LENGTH,
   FEATURED_MULTIPLIER,
+  HOLD_BREAK_PENALTY_MS,
+  HOLD_REQUIRED_MS,
   MAX_CIRCLE_PLAYERS,
   MINIGAME_DURATION_MS,
   MIN_CIRCLE_PLAYERS,
@@ -54,11 +59,30 @@ import {
   POINTS_PER_EXTRA_MEMBER,
   REACTION_CUES,
   REACTION_MAX_DELAY_MS,
+  RHYTHM_BEAT_MIN_MS,
+  RHYTHM_BEAT_MS,
+  RHYTHM_SUCCESS_RATIO,
+  RHYTHM_TOLERANCE_MS,
+  SEQUENCE_REVEAL_MS,
+  SYNC_SWEEP_MIN_MS,
+  SYNC_SWEEP_MS,
+  SYNC_TARGET,
+  SYNC_WINDOW_MS,
+  SYNC_ZONE_HALF_WIDTH,
   TAP_RACE_TARGET,
   STREAK_MAX_BONUS,
   placementBonus,
   requiredForPad
 } from '../src/shared/config'
+import {
+  beatCount,
+  beatOffset,
+  beatTime,
+  currentInterval,
+  nearestBeat
+} from '../src/shared/rhythm'
+import { markerInZone, markerPosition, sweepPeriod } from '../src/shared/syncTap'
+import { EMOTION_COUNT as EMOTIONS_AVAILABLE } from '../src/shared/types'
 
 let failures = 0
 let checks = 0
@@ -487,6 +511,15 @@ checkTrue(
   worstCueSchedule < MINIGAME_DURATION_MS * 0.75
 )
 
+// The waits are not the whole story: somebody also has to react to each cue. A generous
+// 400ms per cue, so raising the cue count can never silently produce a schedule that
+// only a perfect player could finish.
+const HUMAN_REACTION_MS = 400
+checkTrue(
+  `reaction cues fit the round with reaction time (${worstCueSchedule + REACTION_CUES * HUMAN_REACTION_MS}ms of ${MINIGAME_DURATION_MS}ms)`,
+  worstCueSchedule + REACTION_CUES * HUMAN_REACTION_MS <= MINIGAME_DURATION_MS
+)
+
 // Tap Race must be reachable. The objective counts RAW taps, so it is mood-independent
 // - this pins that it is humanly achievable at a sustainable rate.
 const tapsPerSecondNeeded = TAP_RACE_TARGET / (MINIGAME_DURATION_MS / 1000)
@@ -534,6 +567,245 @@ checkTrue(
     finishRank: 0,
     topScore: 1
   }).placement > 0
+)
+
+/* -------------------------------------------------------------------------- */
+/* Rhythm Tap: the accelerating beat grid                                     */
+/* -------------------------------------------------------------------------- */
+
+// The grid is the one thing in the scene that BOTH sides compute independently every
+// frame, so a mistake here does not show up as a wrong number - it shows up as a round
+// that cannot be won, with no error anywhere. These checks pin its shape.
+
+const beats = Array.from({ length: beatCount() }, (_unused, i) => beatTime(i))
+
+checkTrue(`the round has beats (${beatCount()})`, beatCount() >= 8)
+
+// Strictly increasing. A duplicate or a backwards step would make `nearestBeat`
+// ambiguous and let one tap score two beats.
+let monotonic = true
+for (let i = 1; i < beats.length; i++) {
+  if (beats[i] <= beats[i - 1]) monotonic = false
+}
+checkTrue('beat times strictly increase', monotonic)
+
+// Every beat inside the round. A beat past the end is a beat nobody can ever hit, and
+// it still counts towards the target, so it silently raises the pass mark.
+checkTrue(
+  `every beat lands inside the round (last at ${beats[beats.length - 1]}ms)`,
+  beats[beats.length - 1] < MINIGAME_DURATION_MS
+)
+
+// Actually accelerating, and only accelerating.
+const gaps = beats.slice(1).map((t, i) => t - beats[i])
+let shrinking = true
+for (let i = 1; i < gaps.length; i++) {
+  if (gaps[i] >= gaps[i - 1]) shrinking = false
+}
+checkTrue('the tempo speeds up every beat', shrinking)
+checkTrue(`the first gap is about the configured start (${gaps[0]}ms)`, gaps[0] === RHYTHM_BEAT_MS)
+checkTrue(
+  `the last gap is at or above the configured floor (${gaps[gaps.length - 1]}ms)`,
+  gaps[gaps.length - 1] >= RHYTHM_BEAT_MIN_MS
+)
+
+// THE important one. If the tolerance reaches half the tightest gap, the scoring windows
+// of adjacent beats touch and every moment of the round is "on beat" - mashing scores as
+// well as playing, and the game silently stops being a rhythm game. Calm widens the
+// window by its tolerance multiplier, so the check has to allow for that too.
+const tightestGap = Math.min(...gaps)
+const widestWindow = RHYTHM_TOLERANCE_MS * toleranceFor(EmotionId.Calm)
+checkTrue(
+  `beat windows never overlap (widest ${widestWindow.toFixed(0)}ms vs half-gap ${(tightestGap / 2).toFixed(0)}ms)`,
+  widestWindow < tightestGap / 2
+)
+
+// `nearestBeat` has to agree with the array it is derived from, including exactly on a
+// beat and exactly midway between two.
+let nearestOk = true
+for (let i = 0; i < beats.length; i++) {
+  if (nearestBeat(beats[i]) !== i) nearestOk = false
+}
+checkTrue('nearestBeat is exact on every beat', nearestOk)
+check('nearestBeat clamps before the round', nearestBeat(-500), 0)
+check('nearestBeat clamps after the round', nearestBeat(MINIGAME_DURATION_MS * 2), beats.length - 1)
+check('beatOffset is zero on a beat', beatOffset(beats[3]), 0)
+checkTrue(
+  'beatOffset is worst midway between beats',
+  beatOffset((beats[3] + beats[4]) / 2) > beatOffset(beats[3] + 10)
+)
+
+// A tap landing exactly between two beats must be a miss for EVERY mood, including
+// Calm. This is the same margin as above stated as the thing a player actually does:
+// tap on the off-beat and get nothing for it.
+const offBeatOffset = beatOffset((beats[beats.length - 2] + beats[beats.length - 1]) / 2)
+checkTrue(
+  `an off-beat tap misses even for Calm (${offBeatOffset.toFixed(0)}ms vs ${widestWindow.toFixed(0)}ms)`,
+  offBeatOffset > widestWindow
+)
+
+// The pass mark has to be humanly reachable: a player hitting every beat scores
+// `beatCount()`, so the required share must leave room for ordinary mistakes.
+const soloTarget = Math.ceil(beatCount() * RHYTHM_SUCCESS_RATIO)
+checkTrue(
+  `a solo player can clear rhythm tap (${soloTarget} of ${beatCount()})`,
+  soloTarget <= beatCount() - 2
+)
+
+check('currentInterval reports the opening tempo', currentInterval(0), RHYTHM_BEAT_MS)
+checkTrue(
+  'currentInterval falls through the round',
+  currentInterval(MINIGAME_DURATION_MS * 0.9) < currentInterval(0)
+)
+
+/* -------------------------------------------------------------------------- */
+/* Sync Tap: the accelerating sweep                                           */
+/* -------------------------------------------------------------------------- */
+
+// Sampled at 8ms, which is finer than any frame the scene will actually render.
+const SWEEP_STEP = 8
+let inZoneMs = 0
+let zonePasses = 0
+let wasInZone = false
+let worstJump = 0
+let previousPosition = markerPosition(0, 0)
+let positionInRange = true
+
+for (let t = 0; t <= MINIGAME_DURATION_MS; t += SWEEP_STEP) {
+  const position = markerPosition(0, t)
+  if (position < -1e-9 || position > 1 + 1e-9) positionInRange = false
+
+  worstJump = Math.max(worstJump, Math.abs(position - previousPosition))
+  previousPosition = position
+
+  const inside = markerInZone(0, t)
+  if (inside) inZoneMs += SWEEP_STEP
+  if (inside && !wasInZone) zonePasses++
+  wasInZone = inside
+}
+
+checkTrue('the marker stays on the bar', positionInRange)
+
+// Continuity. The whole reason the sweep ramps on TIME rather than on syncs achieved is
+// that an event-driven speed change teleports the marker. This is the check that would
+// have caught that design: at 8ms the marker should move a couple of percent at most.
+checkTrue(
+  `the marker never jumps (worst ${(worstJump * 100).toFixed(1)}% per 8ms)`,
+  worstJump < 0.05
+)
+
+checkTrue(`the sweep passes the zone often enough (${zonePasses} passes)`, zonePasses >= SYNC_TARGET * 2)
+
+// A tap has to be landable. The zone is a fixed fraction of the bar, so the time inside
+// it shrinks as the sweep speeds up - the LAST pass is the one that has to stay possible.
+const tightestZoneMs = SYNC_ZONE_HALF_WIDTH * 2 * (sweepPeriod(MINIGAME_DURATION_MS) / 2)
+checkTrue(
+  `the tightest zone pass is still tappable (${tightestZoneMs.toFixed(0)}ms)`,
+  tightestZoneMs >= 150
+)
+
+// Every member must be able to fit inside one sync window, so the window has to be at
+// least as long as a zone pass - otherwise a group who all tapped in the same pass could
+// still be judged out of sync.
+checkTrue(
+  `the sync window covers a whole zone pass (${SYNC_WINDOW_MS}ms vs ${tightestZoneMs.toFixed(0)}ms)`,
+  SYNC_WINDOW_MS >= tightestZoneMs
+)
+
+checkTrue('the sweep speeds up', SYNC_SWEEP_MIN_MS < SYNC_SWEEP_MS)
+check('sweepPeriod starts at the configured period', sweepPeriod(0), SYNC_SWEEP_MS)
+check('sweepPeriod ends at the configured floor', sweepPeriod(MINIGAME_DURATION_MS), SYNC_SWEEP_MIN_MS)
+checkTrue(
+  `the marker is out of the zone most of the time (${Math.round((inZoneMs / MINIGAME_DURATION_MS) * 100)}%)`,
+  inZoneMs / MINIGAME_DURATION_MS < 0.4
+)
+
+/* -------------------------------------------------------------------------- */
+/* Color Match and Hold Zones budgets                                         */
+/* -------------------------------------------------------------------------- */
+
+// The palette can only be filled from the emotions that exist.
+checkTrue(
+  `the colour palette fits the emotion set (${COLOR_PALETTE_SIZE} of ${EMOTIONS_AVAILABLE})`,
+  COLOR_PALETTE_SIZE <= EMOTIONS_AVAILABLE
+)
+
+// Guessing must be a bad bet, which needs more colours than a coin flip.
+checkTrue('guessing a colour is unlikely to pay off', COLOR_PALETTE_SIZE >= 4)
+
+// The reveal eats into the playing time. Lengthening the sequence without shortening the
+// reveal is the change that would quietly make the round unwinnable, so this pins that
+// there is still a workable amount of time per step afterwards.
+const colorPlayMs = MINIGAME_DURATION_MS - SEQUENCE_REVEAL_MS
+const msPerStep = colorPlayMs / COLOR_SEQUENCE_LENGTH
+checkTrue(
+  `color match leaves ${msPerStep.toFixed(0)}ms per step`,
+  msPerStep >= 900
+)
+checkTrue(
+  `the reveal leaves time to memorise (${(SEQUENCE_REVEAL_MS / COLOR_SEQUENCE_LENGTH).toFixed(0)}ms per colour)`,
+  SEQUENCE_REVEAL_MS / COLOR_SEQUENCE_LENGTH >= 300
+)
+
+// A setback must cost something without being able to wipe the round.
+checkTrue('a colour mistake costs ground', COLOR_MISTAKE_SETBACK >= 1)
+checkTrue('a colour mistake cannot wipe the sequence', COLOR_MISTAKE_SETBACK < COLOR_SEQUENCE_LENGTH)
+
+// Hold Zones has to be clearable inside the round even after one break.
+checkTrue(
+  `hold zones survives a break (${HOLD_REQUIRED_MS + HOLD_BREAK_PENALTY_MS}ms of ${MINIGAME_DURATION_MS}ms)`,
+  HOLD_REQUIRED_MS + HOLD_BREAK_PENALTY_MS <= MINIGAME_DURATION_MS
+)
+checkTrue('breaking the hold chain costs something', HOLD_BREAK_PENALTY_MS > 0)
+
+/* -------------------------------------------------------------------------- */
+/* UI width budgets                                                           */
+/* -------------------------------------------------------------------------- */
+
+// These mirror hardcoded layout numbers in the UI. They are checked here because an
+// overflowing row does not warn, log or clip visibly - it just puts controls off the
+// edge of the screen, which is how two of the six practice games became unreachable.
+// If you change a number in the UI, change it here too.
+
+const PICKER_PANEL_WIDTH = 1000
+const PICKER_PADDING = 14
+const PICKER_CARD_WIDTH = 150
+const PICKER_CARD_MARGIN = 4
+const MINIGAMES_OFFERED = 6
+
+const pickerRowWidth = MINIGAMES_OFFERED * (PICKER_CARD_WIDTH + PICKER_CARD_MARGIN * 2)
+checkTrue(
+  `the practice picker fits its panel (${pickerRowWidth} of ${PICKER_PANEL_WIDTH - PICKER_PADDING * 2})`,
+  pickerRowWidth <= PICKER_PANEL_WIDTH - PICKER_PADDING * 2
+)
+checkTrue('the practice picker offers every game', MINIGAMES_OFFERED === 6)
+
+// Color Match draws one tap target per palette colour, in the action row.
+const COLOR_TARGET_SIZE = 92
+const COLOR_TARGET_MARGIN = 8
+const colorRowWidth = COLOR_PALETTE_SIZE * (COLOR_TARGET_SIZE + COLOR_TARGET_MARGIN * 2)
+checkTrue(
+  `the colour targets fit the canvas (${colorRowWidth} of 1600)`,
+  colorRowWidth <= 1600
+)
+checkTrue(
+  `each colour target clears the 80px touch minimum (${COLOR_TARGET_SIZE}px)`,
+  COLOR_TARGET_SIZE >= 80
+)
+
+// Rhythm Tap draws one dot per beat, and the beat count is now derived rather than
+// fixed, so the strip grows if the tempo is raised.
+const BEAT_DOT_PITCH = 16 + 3 * 2
+checkTrue(
+  `the beat strip fits the panel (${beatCount() * BEAT_DOT_PITCH} of 780)`,
+  beatCount() * BEAT_DOT_PITCH <= 780
+)
+
+// Color Match draws one swatch per sequence step in the centre panel.
+const SEQUENCE_SWATCH_PITCH = 54 + 4 * 2
+checkTrue(
+  `the sequence strip fits the panel (${COLOR_SEQUENCE_LENGTH * SEQUENCE_SWATCH_PITCH} of 780)`,
+  COLOR_SEQUENCE_LENGTH * SEQUENCE_SWATCH_PITCH <= 780
 )
 
 /* -------------------------------------------------------------------------- */
