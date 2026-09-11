@@ -65,8 +65,13 @@ function Root() {
         }}
       >
         <TopBar />
-        <ConnectionBanner />
-        <NoticeToast />
+        {/*
+          Exactly ONE of these at a time. Both are ~50px and the vertical budget
+          only has 60px of slack, so rendering both could push the action row off
+          the bottom of a phone screen. The connection banner wins because a player
+          who cannot reach the server needs to know that before anything else.
+        */}
+        {state.serverAlive && state.roomReady ? <NoticeToast /> : <ConnectionBanner />}
       </UiEntity>
 
       {/* Middle: the round, the result, or where-to-go guidance. */}
@@ -97,8 +102,20 @@ function Root() {
 /** Installs the renderer. Called once from the client bootstrap. */
 export function setupUi(): void {
   ReactEcsRenderer.setUiRenderer(Root, {
-    virtualWidth: 1920,
-    virtualHeight: 1080,
+    // 1600x720, NOT 1920x1080. This matters more than it looks.
+    //
+    // The SDK overrides any 16:9 virtual size to 1600x720 on mobile, because
+    // phone screens are wider than 16:9 and a 16:9 canvas would letterbox. So a
+    // layout authored against 1080 of height silently gets 720 on a phone, and
+    // every panel then occupies 1.5x the vertical space it was designed for.
+    // In practice that pushed panels over the whole view and left the Info
+    // panel's close button off the bottom of the screen entirely.
+    //
+    // 1600x720 is not 16:9 (it is 20:9), so the SDK uses it AS-IS on every
+    // platform. One canvas, one set of numbers, and the phone is the reference
+    // rather than an afterthought - which is what mobile-first should mean.
+    virtualWidth: 1600,
+    virtualHeight: 720,
     screenInset: 'interactable'
   })
 }

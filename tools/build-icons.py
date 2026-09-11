@@ -1,0 +1,286 @@
+#!/usr/bin/env python3
+"""
+Generates the UI icon set into `images/icons/`.
+
+WHY THESE EXIST: the Decentraland Unity explorer ships no emoji glyphs, so an
+emoji in UI text renders as a missing-glyph box on the mobile client. Icons
+therefore have to be real image files. Rather than pull in third-party art with
+unclear licensing, these are authored here as 16x16 pixel-art bitmaps and scaled
+up, which also suits the scene's neon look and keeps every file about 1 KB.
+
+Output is RGBA (PNG colour type 6) so the glyph sits on transparency and can be
+tinted by `uiBackground.color` at the call site.
+
+Re-run after editing a bitmap:
+
+    python3 tools/build-icons.py
+"""
+
+import os
+import struct
+import zlib
+
+# Each icon is a 16x16 grid. '#' is opaque, anything else transparent.
+ICONS = {
+    # Leaderboard: ascending bars. Reads as "scores" at a glance.
+    "board": [
+        "................",
+        "................",
+        "............####",
+        "............####",
+        "............####",
+        "......####..####",
+        "......####..####",
+        "......####..####",
+        "..########..####",
+        "..####..##..####",
+        "..####..##..####",
+        "..####..##..####",
+        "..####..##..####",
+        "................",
+        "................",
+        "................",
+    ],
+    # Call the plaza: a bell.
+    "call": [
+        "................",
+        ".......##.......",
+        "......####......",
+        ".....######.....",
+        ".....######.....",
+        "....########....",
+        "....########....",
+        "...##########...",
+        "...##########...",
+        "..############..",
+        "..############..",
+        "................",
+        ".....######.....",
+        "......####......",
+        "................",
+        "................",
+    ],
+    # Practice: a target. Thick outer ring, clear gap, solid centre - the gap is
+    # what stops it reading as a zero at small sizes.
+    "practice": [
+        "................",
+        "....########....",
+        "..###......###..",
+        "..##........##..",
+        ".##..........##.",
+        "##....####....##",
+        "##...######...##",
+        "##...######...##",
+        "##...######...##",
+        "##....####....##",
+        ".##..........##.",
+        "..##........##..",
+        "..###......###..",
+        "....########....",
+        "................",
+        "................",
+    ],
+    # Info: an i in a circle.
+    "info": [
+        "................",
+        ".....######.....",
+        "...##......##...",
+        "..#....##....#..",
+        ".#.....##.....#.",
+        ".#............#.",
+        "#.....####.....#",
+        "#.......##.....#",
+        "#.......##.....#",
+        "#.......##.....#",
+        ".#......##....#.",
+        ".#....######..#.",
+        "..#..........#..",
+        "...##......##...",
+        ".....######.....",
+        "................",
+    ],
+    # Close: an X. Always available on every panel.
+    "close": [
+        "................",
+        "................",
+        "..###......###..",
+        "..####....####..",
+        "...####..####...",
+        "....########....",
+        ".....######.....",
+        "......####......",
+        "......####......",
+        ".....######.....",
+        "....########....",
+        "...####..####...",
+        "..####....####..",
+        "..###......###..",
+        "................",
+        "................",
+    ],
+    # Sound on: speaker plus waves.
+    "sound-on": [
+        "................",
+        "..........#.....",
+        "......##...#....",
+        ".....###.#..#...",
+        "..######.#.#.#..",
+        "..######.#.#.#..",
+        "..######.#.#.#..",
+        "..######.#.#.#..",
+        "..######.#.#.#..",
+        "..######.#.#.#..",
+        "..######.#.#.#..",
+        ".....###.#..#...",
+        "......##...#....",
+        "..........#.....",
+        "................",
+        "................",
+    ],
+    # Sound off: speaker plus a cross.
+    "sound-off": [
+        "................",
+        "................",
+        "......##........",
+        ".....###........",
+        "..######..#..#..",
+        "..######...##...",
+        "..######....#...",
+        "..######...##...",
+        "..######..#..#..",
+        "..######........",
+        "..######........",
+        ".....###........",
+        "......##........",
+        "................",
+        "................",
+        "................",
+    ],
+    # Reroll: a circular arrow.
+    "reroll": [
+        "................",
+        "......####......",
+        "....##....##....",
+        "...#........#.##",
+        "..#..........###",
+        "..#..........#.#",
+        ".#............#.",
+        ".#..............",
+        ".#..............",
+        ".#............#.",
+        "..#..........#..",
+        "..#..........#..",
+        "...#........#...",
+        "....##....##....",
+        "......####......",
+        "................",
+    ],
+    # Invite: a person and a plus.
+    "invite": [
+        "................",
+        "....####........",
+        "...######.......",
+        "...######.......",
+        "....####........",
+        "................",
+        "..########..##..",
+        ".##########.##..",
+        "##########.####.",
+        "##########.####.",
+        "##########..##..",
+        "##########..##..",
+        "##########......",
+        "................",
+        "................",
+        "................",
+    ],
+    # Play / start.
+    "play": [
+        "................",
+        "...##...........",
+        "...####.........",
+        "...######.......",
+        "...########.....",
+        "...##########...",
+        "...############.",
+        "...#############",
+        "...#############",
+        "...############.",
+        "...##########...",
+        "...########.....",
+        "...######.......",
+        "...####.........",
+        "...##...........",
+        "................",
+    ],
+    # Tick / confirmed.
+    "check": [
+        "................",
+        "................",
+        "..............##",
+        ".............###",
+        "............###.",
+        "...........###..",
+        "..##......###...",
+        "..###....###....",
+        "...###..###.....",
+        "....######......",
+        ".....####.......",
+        "......##........",
+        "................",
+        "................",
+        "................",
+        "................",
+    ],
+}
+
+SCALE = 4  # 16 -> 64 px
+SIZE = 16 * SCALE
+
+
+def write_png(path, pixels, width, height):
+    """Writes an RGBA PNG. `pixels` is a list of rows of (r,g,b,a) tuples."""
+    raw = bytearray()
+    for row in pixels:
+        raw.append(0)  # filter type 0
+        for r, g, b, a in row:
+            raw += bytes((r, g, b, a))
+
+    def chunk(tag, payload):
+        data = tag + payload
+        return struct.pack(">I", len(payload)) + data + struct.pack(">I", zlib.crc32(data))
+
+    png = b"\x89PNG\r\n\x1a\n"
+    # colour type 6 = truecolour with alpha
+    png += chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+    png += chunk(b"IDAT", zlib.compress(bytes(raw), 9))
+    png += chunk(b"IEND", b"")
+
+    with open(path, "wb") as handle:
+        handle.write(png)
+    return len(png)
+
+
+os.makedirs(os.path.join("images", "icons"), exist_ok=True)
+
+total = 0
+for name, grid in ICONS.items():
+    assert len(grid) == 16, f"{name}: expected 16 rows, got {len(grid)}"
+    for row_index, row in enumerate(grid):
+        assert len(row) == 16, f"{name} row {row_index}: expected 16 cols, got {len(row)}"
+
+    pixels = []
+    for y in range(SIZE):
+        row_out = []
+        source_row = grid[y // SCALE]
+        for x in range(SIZE):
+            opaque = source_row[x // SCALE] == "#"
+            # White glyph on transparency, so the call site can tint it.
+            row_out.append((255, 255, 255, 255) if opaque else (0, 0, 0, 0))
+        pixels.append(row_out)
+
+    path = os.path.join("images", "icons", f"{name}.png")
+    total += write_png(path, pixels, SIZE, SIZE)
+    print(f"  wrote {path}")
+
+print(f"\n{len(ICONS)} icons, {total / 1024:.1f} KB total")

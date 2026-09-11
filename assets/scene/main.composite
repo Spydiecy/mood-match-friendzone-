@@ -1302,7 +1302,7 @@
         "515": {
           "json": {
             "text": "FEATURED TODAY",
-            "fontSize": 2.2,
+            "fontSize": 1.1,
             "textColor": {
               "r": 0.29,
               "g": 0.62,
@@ -1314,7 +1314,7 @@
         "522": {
           "json": {
             "text": "A PAD",
-            "fontSize": 2.0,
+            "fontSize": 1.0,
             "textColor": {
               "r": 1,
               "g": 1,
@@ -1326,7 +1326,7 @@
         "523": {
           "json": {
             "text": "B PAD",
-            "fontSize": 2.0,
+            "fontSize": 1.0,
             "textColor": {
               "r": 1,
               "g": 1,
@@ -1338,7 +1338,7 @@
         "524": {
           "json": {
             "text": "C PAD",
-            "fontSize": 2.0,
+            "fontSize": 1.0,
             "textColor": {
               "r": 1,
               "g": 1,
@@ -1350,7 +1350,7 @@
         "526": {
           "json": {
             "text": "TOP MOODS",
-            "fontSize": 1.5,
+            "fontSize": 0.8,
             "textColor": {
               "r": 1,
               "g": 1,
@@ -1362,7 +1362,7 @@
         "527": {
           "json": {
             "text": "MOOD MATCH\nstand on a pad with someone\nand tap Form Circle",
-            "fontSize": 1.7,
+            "fontSize": 0.95,
             "textColor": {
               "r": 1,
               "g": 1,
@@ -1374,7 +1374,7 @@
         "529": {
           "json": {
             "text": "CALM",
-            "fontSize": 1.5,
+            "fontSize": 0.8,
             "textColor": {
               "r": 0.29,
               "g": 0.62,
@@ -1386,7 +1386,7 @@
         "531": {
           "json": {
             "text": "JOY",
-            "fontSize": 1.5,
+            "fontSize": 0.8,
             "textColor": {
               "r": 1.0,
               "g": 0.83,
@@ -1398,7 +1398,7 @@
         "533": {
           "json": {
             "text": "FOCUS",
-            "fontSize": 1.5,
+            "fontSize": 0.8,
             "textColor": {
               "r": 0.66,
               "g": 0.42,
@@ -1410,7 +1410,7 @@
         "535": {
           "json": {
             "text": "ENERGY",
-            "fontSize": 1.5,
+            "fontSize": 0.8,
             "textColor": {
               "r": 1.0,
               "g": 0.35,
@@ -1422,7 +1422,7 @@
         "537": {
           "json": {
             "text": "LOVE",
-            "fontSize": 1.5,
+            "fontSize": 0.8,
             "textColor": {
               "r": 1.0,
               "g": 0.45,
@@ -1434,7 +1434,7 @@
         "539": {
           "json": {
             "text": "CURIOSITY",
-            "fontSize": 1.5,
+            "fontSize": 0.8,
             "textColor": {
               "r": 0.35,
               "g": 0.87,

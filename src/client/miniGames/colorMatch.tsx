@@ -59,7 +59,7 @@ export function ColorMatchPanel(props: { round: RoundView }) {
     <UiEntity
       uiTransform={{
         width: '100%',
-        height: 300,
+        height: 196,
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center'
@@ -73,7 +73,7 @@ export function ColorMatchPanel(props: { round: RoundView }) {
               ? `Memorise it - ${revealLeft}s`
               : `Step ${Math.min(round.step + 1, round.sequence.length)} of ${round.sequence.length}`
         }
-        fontSize={FONT.body}
+        fontSize={FONT.small}
         color={showing ? COLORS.warn : COLORS.text}
         width={640}
       />
@@ -89,8 +89,8 @@ export function ColorMatchPanel(props: { round: RoundView }) {
             <UiEntity
               key={`${index}-${emotion}`}
               uiTransform={{
-                width: 96,
-                height: 96,
+                width: 62,
+                height: 62,
                 alignItems: 'center',
                 justifyContent: 'center',
                 borderRadius: RADIUS.chip,
@@ -105,9 +105,8 @@ export function ColorMatchPanel(props: { round: RoundView }) {
             >
               <Text
                 value={done ? 'OK' : visible ? '' : '?'}
-                fontSize={FONT.body}
+                fontSize={FONT.small}
                 color={COLORS.panel}
-                height={Math.round(FONT.body * 1.3)}
               />
             </UiEntity>
           )
@@ -128,8 +127,8 @@ export function ColorMatchPanel(props: { round: RoundView }) {
               <UiEntity
                 key={`conf-${address}`}
                 uiTransform={{
-                  width: 120,
-                  height: 56,
+                  width: 84,
+                  height: 38,
                   alignItems: 'center',
                   justifyContent: 'center',
                   borderRadius: RADIUS.pill,
@@ -141,9 +140,8 @@ export function ColorMatchPanel(props: { round: RoundView }) {
               >
                 <Text
                   value={confirmed ? 'OK' : isMe ? 'You' : shortName(round.memberNames[index] ?? '')}
-                  fontSize={FONT.small}
+                  fontSize={FONT.tiny}
                   color={confirmed ? COLORS.panel : COLORS.textDim}
-                  height={Math.round(FONT.small * 1.3)}
                 />
               </UiEntity>
             )
@@ -151,8 +149,8 @@ export function ColorMatchPanel(props: { round: RoundView }) {
         </Row>
       )}
 
-      <UiEntity uiTransform={{ width: 560, height: 26, margin: { top: SPACE.sm } }}>
-        <ProgressBar value={round.progress} fill={COLORS.accent} />
+      <UiEntity uiTransform={{ width: 470, height: 14, margin: { top: SPACE.xs } }}>
+        <ProgressBar value={round.progress} fill={COLORS.accent} height={14} />
       </UiEntity>
 
       <Text
@@ -165,10 +163,9 @@ export function ColorMatchPanel(props: { round: RoundView }) {
                 ? 'You are in - waiting for the others'
                 : `${secondsLeft(round, now)}s left`
         }
-        fontSize={FONT.small}
+        fontSize={FONT.tiny}
         color={wrongTap ? COLORS.bad : COLORS.textDim}
         width={720}
-        marginTop={SPACE.xs}
       />
     </UiEntity>
   )
@@ -195,7 +192,7 @@ export function ColorMatchAction(props: { round: RoundView }) {
     <UiEntity
       uiTransform={{
         width: '100%',
-        height: 190,
+        height: 128,
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center'
@@ -208,7 +205,7 @@ export function ColorMatchAction(props: { round: RoundView }) {
             emotion={emotion}
             // The tapped target grows briefly, so the thumb gets confirmation
             // from the thing it actually touched.
-            size={Math.round((ready ? 150 : 132) + (myTap === emotion ? flash * 14 : 0))}
+            size={Math.round((ready ? 92 : 82) + (myTap === emotion ? flash * 10 : 0))}
             highlighted={myTap === emotion}
             onClick={ready ? () => inputColorTap(emotion, round) : undefined}
           />
@@ -222,10 +219,9 @@ export function ColorMatchAction(props: { round: RoundView }) {
               ? 'Tapped - the step clears when everyone matches'
               : 'Everyone taps the same colour to advance'
         }
-        fontSize={FONT.small}
+        fontSize={FONT.tiny}
         color={confirmed ? COLORS.good : COLORS.textDim}
         width={760}
-        marginTop={SPACE.xs}
       />
     </UiEntity>
   )

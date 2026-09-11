@@ -1,20 +1,30 @@
 /**
  * Mood Match - UI design tokens.
  *
- * Sizes are expressed against the 1920x1080 virtual canvas passed to
- * `setUiRenderer`. On mobile the SDK swaps in a 1600x720 virtual canvas (it
- * overrides any 16:9 size on phones), so these values render proportionally
- * LARGER on a phone than on desktop - which is what we want.
+ * REFERENCE CANVAS IS 1600x720 on every platform (see `root.tsx` for why). Every
+ * number in this file is in that space, so the vertical budget is 720 - which is
+ * tight, and is the constraint that shapes the whole layout:
+ *
+ *   top strip      ~96
+ *   centre stage   ~380 max
+ *   action row     ~200
+ *
+ * Anything that busts that budget pushes content off a phone screen. The earlier
+ * version of this file was authored against 1080 of height and every panel came
+ * out 1.5x too tall on mobile, which buried the world and put the Info panel's
+ * close button below the bottom edge.
  *
  * Two hard rules enforced throughout the UI layer:
  *
  *  1. NO EMOJI, and no decorative Unicode, in any text value. The Unity explorer
  *     ships no emoji glyphs, so an emoji renders as a missing-glyph box there
- *     while looking fine elsewhere. Emotion identity is carried by COLOUR plus a
- *     plain-ASCII glyph.
- *  2. Every Label gets an explicit width AND height. Bevy measures intrinsic text
+ *     while looking fine elsewhere. Pictorial affordances come from the generated
+ *     PNGs in `images/icons/` instead (see `ICON`).
+ *  2. Every Label gets an explicit width AND height, and the height must fit the
+ *     number of lines the text will actually wrap to. Bevy measures intrinsic text
  *     size, Unity gives an unset dimension ~0 while still drawing the glyphs, so
- *     unsized labels overlap and their parents collapse on the Unity client.
+ *     unsized labels overlap and their parents collapse on the Unity client - and
+ *     an under-sized box clips.
  */
 
 import { Color4 } from '@dcl/sdk/math'
@@ -22,22 +32,39 @@ import { getEmotion } from '../../shared/emotions'
 import { EmotionId } from '../../shared/types'
 
 /* -------------------------------------------------------------------------- */
+/* Canvas budget                                                              */
+/* -------------------------------------------------------------------------- */
+
+/** The reference canvas, matching `setUiRenderer`. */
+export const CANVAS = { width: 1600, height: 720 }
+
+/**
+ * Vertical budget per region. The HUD is built to leave the middle of the screen
+ * as clear as possible, because the players are the interesting thing to look at.
+ */
+export const BUDGET = {
+  topStrip: 92,
+  centreMax: 372,
+  actionRow: 196
+}
+
+/* -------------------------------------------------------------------------- */
 /* Palette                                                                    */
 /* -------------------------------------------------------------------------- */
 
 export const COLORS = {
-  /** Panel background, near-black with a blue cast. */
-  panel: Color4.create(0.05, 0.06, 0.11, 0.92),
+  /** Panel background. Fairly opaque so text stays legible over bright terrain. */
+  panel: Color4.create(0.05, 0.06, 0.11, 0.94),
   /** Slightly lighter inner surface. */
-  surface: Color4.create(0.1, 0.11, 0.18, 0.95),
+  surface: Color4.create(0.1, 0.11, 0.18, 0.96),
   /** Raised chip / row background. */
-  chip: Color4.create(0.16, 0.17, 0.26, 0.95),
+  chip: Color4.create(0.16, 0.17, 0.26, 0.96),
   /** Full-screen scrim behind modals. */
-  scrim: Color4.create(0.02, 0.02, 0.05, 0.82),
+  scrim: Color4.create(0.02, 0.02, 0.05, 0.88),
   /** Primary text. */
   text: Color4.create(1, 1, 1, 1),
-  /** Secondary text - still WCAG-comfortable on the panel colour. */
-  textDim: Color4.create(0.76, 0.79, 0.88, 1),
+  /** Secondary text. */
+  textDim: Color4.create(0.78, 0.81, 0.9, 1),
   /** Success / confirmation. */
   good: Color4.create(0.36, 0.87, 0.56, 1),
   /** Warning / refusal. */
@@ -55,18 +82,30 @@ export const COLORS = {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Font sizes in virtual pixels. The smallest value used anywhere is `small` at
- * 26, which stays comfortably above the 18px readability floor once the mobile
- * virtual canvas scaling is applied.
+ * Font sizes against the 1600x720 canvas.
+ *
+ * `small` at 20 is the floor. On a 1600-wide virtual canvas mapped to a typical
+ * phone viewport that lands comfortably above the readability threshold, and it
+ * leaves room for the compact layout the vertical budget demands.
  */
 export const FONT = {
-  hero: 76,
-  title: 54,
-  heading: 42,
-  body: 34,
-  small: 26,
-  /** Only for the numeric score readout, which benefits from being oversized. */
-  numeric: 64
+  hero: 54,
+  title: 38,
+  heading: 30,
+  body: 24,
+  small: 20,
+  tiny: 17
+}
+
+/**
+ * Line height multiplier used to size text boxes.
+ * Slightly generous so a descender is never clipped.
+ */
+export const LINE = 1.5
+
+/** Height of a text box for a given font size and line count. */
+export function textHeight(fontSize: number, lines = 1): number {
+  return Math.ceil(fontSize * LINE * lines)
 }
 
 /* -------------------------------------------------------------------------- */
@@ -74,37 +113,61 @@ export const FONT = {
 /* -------------------------------------------------------------------------- */
 
 export const SPACE = {
-  xs: 6,
-  sm: 12,
-  md: 20,
-  lg: 32,
-  xl: 48
+  xs: 4,
+  sm: 8,
+  md: 14,
+  lg: 22,
+  xl: 32
 }
 
 export const RADIUS = {
-  chip: 14,
-  panel: 26,
+  chip: 10,
+  panel: 18,
   pill: 999
 }
 
 /**
  * Touch target sizes.
  *
- * The brief asks for a minimum of 80x80. These are well above that on purpose:
- * the primary action is a wide bottom-centre bar, and secondary controls are
- * generous squares, so a thumb never has to be precise.
+ * The brief asks for a minimum of 80x80. On a 1600x720 canvas these all clear
+ * that: the primary bar is 400x86 and secondary buttons are 96x96, which on a
+ * phone viewport is a comfortable thumb target with room to spare.
  */
 export const TOUCH = {
-  /** Primary action bar. */
-  primaryWidth: 460,
-  primaryHeight: 132,
-  /** Secondary icon button. */
-  secondary: 116,
+  primaryWidth: 400,
+  primaryHeight: 86,
+  /** Secondary icon button (square). */
+  secondary: 96,
+  /** Icon glyph size inside a secondary button. */
+  icon: 40,
   /** Mini-game tap targets. */
-  gameButton: 200,
+  gameButton: 116,
+  /** Close button on a modal. */
+  close: 72,
   /** Minimum any interactive element is allowed to be. */
-  min: 96
+  min: 80
 }
+
+/** Paths to the generated icon PNGs. Relative to the scene root. */
+export const ICON = {
+  board: 'images/icons/board.png',
+  call: 'images/icons/call.png',
+  practice: 'images/icons/practice.png',
+  info: 'images/icons/info.png',
+  close: 'images/icons/close.png',
+  soundOn: 'images/icons/sound-on.png',
+  soundOff: 'images/icons/sound-off.png',
+  reroll: 'images/icons/reroll.png',
+  invite: 'images/icons/invite.png',
+  play: 'images/icons/play.png',
+  check: 'images/icons/check.png'
+} as const
+
+/** Subtle background texture used behind mini-game panels. */
+export const PANEL_TEXTURE = 'images/panel-grid.png'
+
+/** Soft radial glow, tinted at the call site. Used behind the beat ring. */
+export const GLOW = 'images/glow.png'
 
 /* -------------------------------------------------------------------------- */
 /* Emotion colours                                                            */

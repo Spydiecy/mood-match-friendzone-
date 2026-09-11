@@ -1,225 +1,267 @@
 /**
  * Mood Match - the main HUD.
  *
- * Layout rules that drive every position in this file:
+ * Layout principles, all learned from looking at it on an actual phone:
  *
- *  - The renderer uses `screenInset: 'interactable'`, so the client's minimap,
- *    chat and left-side controls are already avoided.
- *  - The mobile client still draws its own action buttons over the bottom-RIGHT
- *    of that area, so the primary action sits bottom-CENTRE and nothing tappable
- *    is placed on the right edge.
- *  - Critical information is top-centre and centre, which is where the brief asks
- *    for it and where a thumb never covers it.
+ *  1. THE CENTRE OF THE SCREEN STAYS EMPTY unless a round is running. The
+ *     interesting thing to look at is the other players, and an idle status panel
+ *     parked in the middle buried the entire world. Status lives in a slim strip
+ *     at the top instead.
+ *  2. Everything sits in the 720-high budget from `theme.ts`: a ~92px top strip, a
+ *     centre stage that only appears during a round, and a ~196px action row.
+ *  3. `screenInset: 'interactable'` already clears the notch, minimap, chat and
+ *     left-side controls. What it does NOT clear is the mobile client's own action
+ *     buttons over the bottom-right, so the action column is centred and kept
+ *     narrow enough to stay clear of both the joystick and those buttons.
+ *  4. Buttons carry generated PNG icons plus a short caption. Emoji are not an
+ *     option (no glyphs on the Unity explorer) and icon-only controls are
+ *     guesswork on first use.
  */
 
 import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
-import { MIN_CIRCLE_PLAYERS, PAD_RADIUS } from '../../shared/config'
+import { MIN_CIRCLE_PLAYERS } from '../../shared/config'
 import { getEmotion } from '../../shared/emotions'
-import { maxPossibleScore } from '../../shared/scoring'
 import { CirclePhase } from '../../shared/types'
 import { PAD_NAMES, cancelWaiting, pingPlaza, requestFormCircle, waitingElsewhere } from '../circle'
 import { MiniGameAction, MiniGamePanel, miniGameBrief, miniGameName } from '../miniGames'
 import { roundFromPad, roundFromPractice } from '../miniGames/round'
 import { practiceBest, startPractice, stopPractice } from '../practice'
-import { getLayout } from '../mobile/safeArea'
 import { state } from '../state'
-import { COLORS, FONT, RADIUS, SPACE, TOUCH, emotionColor, emotionShade, toneColor } from './theme'
+import {
+  BUDGET,
+  COLORS,
+  FONT,
+  ICON,
+  RADIUS,
+  SPACE,
+  TOUCH,
+  emotionColor,
+  emotionShade,
+  textHeight,
+  toneColor
+} from './theme'
 import {
   EmotionBadge,
+  Icon,
   IconButton,
   Panel,
   PrimaryButton,
   ProgressBar,
   Row,
+  StatChip,
   Text
 } from './widgets'
 
 /* -------------------------------------------------------------------------- */
-/* Top bar                                                                    */
+/* Top strip                                                                  */
 /* -------------------------------------------------------------------------- */
 
 /**
- * Identity strip: the player's emotion, today's featured emotion, and their
- * score. Deliberately the first thing on screen - a new player should be able to
- * answer "who am I in this game" without tapping anything.
+ * One slim row carrying everything the player needs at a glance: their mood, their
+ * numbers, and what to do next.
+ *
+ * The "what to do next" used to be a large centred panel. Merging it in here is
+ * what freed the middle of the screen.
  */
 export function TopBar() {
-  const layout = getLayout()
-  const emotion = getEmotion(state.emotion)
-  const featured = getEmotion(state.featuredEmotion)
-  const isFeatured = state.emotion === state.featuredEmotion
-
   return (
     <UiEntity
       uiTransform={{
         width: '100%',
-        height: layout.compact ? 150 : 168,
+        height: BUDGET.topStrip,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         padding: { top: SPACE.sm }
       }}
     >
-      {/* Player identity */}
-      <UiEntity
-        uiTransform={{
-          width: layout.compact ? 340 : 400,
-          height: 124,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'flex-start',
-          padding: SPACE.sm,
-          borderRadius: RADIUS.panel,
-          borderWidth: 3,
-          borderColor: emotionColor(state.emotion)
-        }}
-        uiBackground={{ color: emotionShade(state.emotion, 0.95) }}
-      >
-        <EmotionBadge emotion={state.emotion} size={84} />
-        <UiEntity
-          uiTransform={{
-            width: layout.compact ? 220 : 280,
-            height: 100,
-            flexDirection: 'column',
-            alignItems: 'flex-start',
-            justifyContent: 'center',
-            padding: { left: SPACE.sm }
-          }}
-        >
-          <Text
-            value={`You are ${emotion.name}`}
-            fontSize={FONT.body}
-            color={COLORS.text}
-            align="middle-left"
-            height={Math.round(FONT.body * 1.3)}
-          />
-          <Text
-            value={isFeatured ? 'Featured today - double points' : emotion.tagline}
-            fontSize={FONT.small}
-            color={isFeatured ? COLORS.good : COLORS.textDim}
-            align="middle-left"
-            height={Math.round(FONT.small * 1.4)}
-          />
-        </UiEntity>
-      </UiEntity>
-
-      {/* Featured emotion of the day */}
-      {!layout.compact && (
-        <UiEntity
-          uiTransform={{
-            width: 250,
-            height: 124,
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: RADIUS.panel,
-            margin: { left: SPACE.sm, right: SPACE.sm }
-          }}
-          uiBackground={{ color: COLORS.panel }}
-        >
-          <Text
-            value="Featured today"
-            fontSize={FONT.small}
-            color={COLORS.textDim}
-            height={Math.round(FONT.small * 1.3)}
-          />
-          <Text
-            value={featured.name}
-            fontSize={FONT.heading}
-            color={emotionColor(state.featuredEmotion)}
-            height={Math.round(FONT.heading * 1.25)}
-          />
-          <Text
-            value="2x points"
-            fontSize={FONT.small}
-            color={COLORS.textDim}
-            height={Math.round(FONT.small * 1.3)}
-          />
-        </UiEntity>
-      )}
-
-      {/* Score and rank */}
-      <UiEntity
-        uiTransform={{
-          width: layout.compact ? 300 : 330,
-          height: 124,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderRadius: RADIUS.panel,
-          margin: { left: SPACE.sm }
-        }}
-        uiBackground={{ color: COLORS.panel }}
-      >
-        <MiniStat label="Score" value={String(state.score)} />
-        <MiniStat
-          label="Rank"
-          value={state.rank > 0 ? `#${state.rank}` : '-'}
-          color={state.rank === 1 ? COLORS.warn : COLORS.text}
-        />
-        <MiniStat
-          label="Streak"
-          value={`${state.streakDays}d`}
-          color={state.streakDays > 1 ? COLORS.good : COLORS.text}
-        />
-      </UiEntity>
+      <MoodChip />
+      <StatsChip />
+      <StatusChip />
     </UiEntity>
   )
 }
 
-/** A single compact statistic inside the top bar. */
-function MiniStat(props: { label: string; value: string; color?: typeof COLORS.text }) {
+/** The player's mood identity, compact. */
+function MoodChip() {
+  const emotion = getEmotion(state.emotion)
+  const isFeatured = state.emotion === state.featuredEmotion
+
   return (
     <UiEntity
       uiTransform={{
-        width: 100,
-        height: 104,
-        flexDirection: 'column',
+        width: 208,
+        height: 76,
+        flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'flex-start',
+        padding: { left: SPACE.sm, right: SPACE.sm },
+        borderRadius: RADIUS.panel,
+        borderWidth: 2,
+        borderColor: emotionColor(state.emotion),
+        margin: { right: SPACE.sm }
       }}
+      uiBackground={{ color: emotionShade(state.emotion, 0.95) }}
     >
-      <Text
-        value={props.value}
-        fontSize={FONT.heading}
-        color={props.color ?? COLORS.text}
-        height={Math.round(FONT.heading * 1.2)}
+      <EmotionBadge emotion={state.emotion} size={52} />
+      <UiEntity
+        uiTransform={{
+          width: 132,
+          height: 66,
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          justifyContent: 'center',
+          padding: { left: SPACE.sm }
+        }}
+      >
+        <Text
+          value={emotion.name}
+          fontSize={FONT.heading}
+          color={COLORS.text}
+          align="middle-left"
+        />
+        {/* Single line, nowrap. The two-line version clipped on a phone. */}
+        <Text
+          value={isFeatured ? 'x2 today' : 'mood'}
+          fontSize={FONT.tiny}
+          color={isFeatured ? COLORS.good : COLORS.textDim}
+          align="middle-left"
+        />
+      </UiEntity>
+    </UiEntity>
+  )
+}
+
+/** Score, rank and streak. */
+function StatsChip() {
+  return (
+    <UiEntity
+      uiTransform={{
+        width: 268,
+        height: 76,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: RADIUS.panel,
+        margin: { right: SPACE.sm }
+      }}
+      uiBackground={{ color: COLORS.panel }}
+    >
+      <StatChip label="Score" value={String(state.score)} />
+      <StatChip
+        label="Rank"
+        value={state.rank > 0 ? `#${state.rank}` : '-'}
+        color={state.rank === 1 ? COLORS.warn : COLORS.text}
       />
-      <Text
-        value={props.label}
-        fontSize={FONT.small}
-        color={COLORS.textDim}
-        height={Math.round(FONT.small * 1.2)}
+      <StatChip
+        label="Streak"
+        value={`${state.streakDays}d`}
+        color={state.streakDays > 1 ? COLORS.good : COLORS.text}
       />
     </UiEntity>
   )
 }
 
+/**
+ * What to do next, in one line.
+ *
+ * This replaced a full centre-screen panel. It always answers "where do I go" and
+ * "who is already there", which is the information a social game cannot afford to
+ * hide - but it does so in 76px of height instead of 300.
+ */
+function StatusChip() {
+  const guidance = currentGuidance()
+
+  return (
+    <UiEntity
+      uiTransform={{
+        width: 470,
+        height: 76,
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: { left: SPACE.md, right: SPACE.md },
+        borderRadius: RADIUS.panel,
+        borderWidth: guidance.urgent ? 2 : 0,
+        borderColor: guidance.urgent ? COLORS.good : COLORS.none
+      }}
+      uiBackground={{ color: COLORS.panel }}
+    >
+      <Text
+        value={guidance.headline}
+        fontSize={FONT.body}
+        color={guidance.urgent ? COLORS.good : COLORS.text}
+      />
+      <Text value={guidance.detail} fontSize={FONT.tiny} color={COLORS.textDim} />
+    </UiEntity>
+  )
+}
+
+/** The current one-line instruction. */
+function currentGuidance(): { headline: string; detail: string; urgent: boolean } {
+  const onPad = state.nearestPad >= 0
+  const elsewhere = waitingElsewhere()
+  const gathering = onPad ? state.pads[state.nearestPad] : undefined
+  const waitingHere =
+    gathering && gathering.phase === CirclePhase.Gathering ? gathering.members.length : 0
+
+  if (state.waiting) {
+    const needed = Math.max(0, MIN_CIRCLE_PLAYERS - waitingHere)
+    return {
+      headline: needed > 0 ? `Waiting for ${needed} more` : 'Circle forming',
+      detail:
+        state.playersOnline > 1
+          ? 'Your avatar is waving - stay in the ring'
+          : 'Tap Call to ping everyone in the World',
+      urgent: true
+    }
+  }
+
+  if (onPad) {
+    return {
+      headline: `On the ${PAD_NAMES[state.nearestPad]}`,
+      detail:
+        waitingHere > 0
+          ? `${waitingHere} already waiting - tap Form Circle`
+          : 'Tap Form Circle and wait for someone',
+      urgent: waitingHere > 0
+    }
+  }
+
+  if (elsewhere) {
+    return {
+      headline: `${elsewhere.count} waiting at the ${PAD_NAMES[elsewhere.padIndex]}`,
+      detail: 'Walk over and tap Form Circle',
+      urgent: true
+    }
+  }
+
+  return {
+    headline: 'Walk to a Mood Pad',
+    detail: `${state.playersOnline} here now - three glowing rings`,
+    urgent: false
+  }
+}
+
 /* -------------------------------------------------------------------------- */
-/* Centre: guidance / round / result                                          */
+/* Centre stage - only during a round                                         */
 /* -------------------------------------------------------------------------- */
 
-/** The middle of the screen. Shows whichever of four states applies. */
+/**
+ * The middle of the screen.
+ *
+ * Returns a 1x1 nothing when idle, on purpose. Every pixel spent here is a pixel
+ * of the world and of other players that the player cannot see.
+ */
 export function CenterStage() {
   const pad = state.myPad
 
-  if (pad && pad.phase !== CirclePhase.Result) {
-    return <ActiveRound />
-  }
+  if (pad && pad.phase !== CirclePhase.Result) return <ActiveRound />
+  if (pad && pad.phase === CirclePhase.Result) return <RoundResult />
+  if (state.practice) return <PracticeRound />
+  if (state.payout) return <PayoutPanel />
 
-  if (pad && pad.phase === CirclePhase.Result) {
-    return <RoundResult />
-  }
-
-  if (state.practice) {
-    return <PracticeRound />
-  }
-
-  if (state.payout) {
-    return <PayoutPanel />
-  }
-
-  return <PlazaGuidance />
+  return <UiEntity uiTransform={{ width: 1, height: 1 }} />
 }
 
 /** A live, server-judged round. */
@@ -231,42 +273,38 @@ function ActiveRound() {
   const counting = pad.phase === CirclePhase.Countdown
 
   return (
-    <Panel width={860} padding={SPACE.md}>
+    <Panel width={780} maxHeight={BUDGET.centreMax} padding={SPACE.md} textured>
       <Row width="100%" justifyContent="center">
         <Text
-          value={`${miniGameName(pad.game)} - ${pad.members.length} players`}
+          value={`${miniGameName(pad.game)}  -  ${pad.members.length} players`}
           fontSize={FONT.heading}
           color={COLORS.text}
-          width={720}
+          width={620}
         />
       </Row>
 
-      {pad.comboBonus > 0 ? (
-        <Text
-          value={`${pad.comboName}: +${pad.comboBonus} bonus locked in`}
-          fontSize={FONT.small}
-          color={COLORS.good}
-          width={720}
-        />
-      ) : (
-        <Text
-          value="No combo bonus this round - the circle still scores"
-          fontSize={FONT.small}
-          color={COLORS.textDim}
-          width={720}
-        />
-      )}
+      <Text
+        value={
+          pad.comboBonus > 0
+            ? `${pad.comboName}  +${pad.comboBonus}`
+            : 'No combo bonus - the circle still scores'
+        }
+        fontSize={FONT.tiny}
+        color={pad.comboBonus > 0 ? COLORS.good : COLORS.textDim}
+        width={620}
+      />
 
       {counting ? (
         <Text
           value={miniGameBrief(pad.game)}
-          fontSize={FONT.body}
+          fontSize={FONT.small}
           color={COLORS.textDim}
-          width={780}
-          marginTop={SPACE.xs}
+          width={720}
+          wrap
+          lines={2}
         />
       ) : (
-        <UiEntity uiTransform={{ width: 1, height: SPACE.xs }} />
+        false
       )}
 
       <MiniGamePanel round={round} />
@@ -274,7 +312,7 @@ function ActiveRound() {
   )
 }
 
-/** The brief moment after a round, before the itemised payout arrives. */
+/** The moment after a round, before the itemised payout arrives. */
 function RoundResult() {
   const pad = state.myPad
   if (!pad) return <UiEntity uiTransform={{ width: 1, height: 1 }} />
@@ -282,42 +320,38 @@ function RoundResult() {
   const mine = pad.myIndex >= 0 ? pad.points[pad.myIndex] ?? 0 : 0
 
   return (
-    <Panel width={760} padding={SPACE.lg} borderWidth={4} borderColor={pad.success ? COLORS.good : COLORS.warn}>
-      <Text
-        value={pad.success ? 'Circle cleared' : 'Circle held'}
-        fontSize={FONT.title}
-        color={pad.success ? COLORS.good : COLORS.warn}
-        width={640}
-      />
-      <Text
-        value={pad.success ? miniGameName(pad.game) + ' complete' : 'Mini-game missed - base points still count'}
-        fontSize={FONT.body}
-        color={COLORS.textDim}
-        width={680}
-      />
+    <Panel
+      width={620}
+      maxHeight={BUDGET.centreMax}
+      padding={SPACE.lg}
+      borderWidth={3}
+      borderColor={pad.success ? COLORS.good : COLORS.warn}
+      textured
+    >
+      <Row width="100%" justifyContent="center">
+        <Icon
+          src={pad.success ? ICON.check : ICON.info}
+          size={34}
+          color={pad.success ? COLORS.good : COLORS.warn}
+        />
+        <Text
+          value={pad.success ? 'Circle cleared' : 'Circle held'}
+          fontSize={FONT.title}
+          color={pad.success ? COLORS.good : COLORS.warn}
+          width={420}
+        />
+      </Row>
       <Text
         value={`+${mine} points`}
         fontSize={FONT.hero}
         color={COLORS.text}
-        width={520}
-        marginTop={SPACE.sm}
+        width={420}
       />
       <Row width="100%" justifyContent="center" marginTop={SPACE.sm}>
         {pad.members.map((address, index) => (
-          <EmotionBadge
-            key={address}
-            emotion={pad.memberEmotions[index] ?? 0}
-            size={66}
-          />
+          <EmotionBadge key={address} emotion={pad.memberEmotions[index] ?? 0} size={44} />
         ))}
       </Row>
-      <Text
-        value="Stay on the pad to go again"
-        fontSize={FONT.small}
-        color={COLORS.textDim}
-        width={520}
-        marginTop={SPACE.sm}
-      />
     </Panel>
   )
 }
@@ -328,26 +362,35 @@ function PracticeRound() {
   if (!practice) return <UiEntity uiTransform={{ width: 1, height: 1 }} />
 
   const round = roundFromPractice(practice, state.emotion)
+  const best = practiceBest(practice.game)
 
   return (
-    <Panel width={860} padding={SPACE.md} borderWidth={3} borderColor={COLORS.warn}>
-      <Text
-        value={`Practice - ${miniGameName(practice.game)}`}
-        fontSize={FONT.heading}
-        color={COLORS.warn}
-        width={720}
-      />
+    <Panel
+      width={780}
+      maxHeight={BUDGET.centreMax}
+      padding={SPACE.md}
+      borderWidth={2}
+      borderColor={COLORS.warn}
+      textured
+    >
+      <Row width="100%" justifyContent="center">
+        <Icon src={ICON.practice} size={26} color={COLORS.warn} />
+        <Text
+          value={`Practice  -  ${miniGameName(practice.game)}`}
+          fontSize={FONT.heading}
+          color={COLORS.warn}
+          width={560}
+        />
+      </Row>
       <Text
         value={
-          practiceBest(practice.game) > 0
-            ? `Practice scores nothing - but your best here is ${Math.round(
-                practiceBest(practice.game) * 100
-              )}%`
-            : 'Practice scores nothing. Real circles need 2 or more players.'
+          best > 0
+            ? `Unscored  -  your best here is ${Math.round(best * 100)}%`
+            : 'Unscored  -  real circles need 2 or more players'
         }
-        fontSize={FONT.small}
+        fontSize={FONT.tiny}
         color={COLORS.textDim}
-        width={780}
+        width={700}
       />
       <MiniGamePanel round={round} />
     </Panel>
@@ -362,14 +405,16 @@ function PayoutPanel() {
   const streakPercent = Math.round(payout.streakBonus * 100)
 
   return (
-    <Panel width={720} padding={SPACE.lg} borderWidth={4} borderColor={COLORS.good}>
-      <Text value="Points earned" fontSize={FONT.heading} color={COLORS.text} width={600} />
-      <Text
-        value={`+${payout.total}`}
-        fontSize={FONT.hero}
-        color={COLORS.good}
-        width={480}
-      />
+    <Panel
+      width={560}
+      maxHeight={BUDGET.centreMax}
+      padding={SPACE.lg}
+      borderWidth={3}
+      borderColor={COLORS.good}
+      textured
+    >
+      <Text value="Points earned" fontSize={FONT.heading} color={COLORS.text} width={460} />
+      <Text value={`+${payout.total}`} fontSize={FONT.hero} color={COLORS.good} width={400} />
 
       <PayoutLine label="Circle formed" value={`+${payout.base}`} />
       {payout.combo > 0 && <PayoutLine label="Emotion combo" value={`+${payout.combo}`} />}
@@ -377,26 +422,24 @@ function PayoutPanel() {
         <PayoutLine label="Mini-game cleared" value={`+${payout.miniGame}`} />
       )}
       {payout.featuredMultiplier > 1 && (
-        <PayoutLine label="Featured emotion" value={`x${payout.featuredMultiplier}`} />
+        <PayoutLine label="Featured mood" value={`x${payout.featuredMultiplier}`} />
       )}
-      {streakPercent > 0 && (
-        <PayoutLine label={`Streak bonus`} value={`+${streakPercent}%`} />
-      )}
+      {streakPercent > 0 && <PayoutLine label="Streak bonus" value={`+${streakPercent}%`} />}
 
       <Text
-        value={`Total ${payout.newScore}  -  rank #${payout.rank}`}
-        fontSize={FONT.body}
+        value={`Total ${payout.newScore}   rank #${payout.rank}`}
+        fontSize={FONT.small}
         color={COLORS.textDim}
-        width={620}
+        width={460}
         marginTop={SPACE.sm}
       />
 
       {payout.unlockedSkin >= 0 && (
         <Text
           value={`Unlocked: ${getEmotion(payout.unlockedSkin).name} skin`}
-          fontSize={FONT.body}
+          fontSize={FONT.small}
           color={COLORS.warn}
-          width={620}
+          width={460}
         />
       )}
     </Panel>
@@ -408,8 +451,8 @@ function PayoutLine(props: { label: string; value: string }) {
   return (
     <UiEntity
       uiTransform={{
-        width: 560,
-        height: 52,
+        width: 440,
+        height: textHeight(FONT.small) + 4,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between'
@@ -417,100 +460,20 @@ function PayoutLine(props: { label: string; value: string }) {
     >
       <Text
         value={props.label}
-        fontSize={FONT.body}
+        fontSize={FONT.small}
         color={COLORS.textDim}
         align="middle-left"
-        width={380}
+        width={300}
       />
       <Text
         value={props.value}
-        fontSize={FONT.body}
+        fontSize={FONT.small}
         color={COLORS.text}
         align="middle-right"
-        width={160}
+        width={120}
       />
     </UiEntity>
   )
-}
-
-/**
- * The default state: tells the player exactly what to do next.
- *
- * This card is the retention workhorse. It always answers "where do I go" and
- * "who is already there", because a social game dies if a newcomer cannot find
- * the other players.
- */
-function PlazaGuidance() {
-  const onPad = state.nearestPad >= 0
-  const elsewhere = waitingElsewhere()
-  const gathering = onPad ? state.pads[state.nearestPad] : undefined
-  const waitingHere = gathering && gathering.phase === CirclePhase.Gathering
-    ? gathering.members.length
-    : 0
-
-  let headline: string
-  let detail: string
-
-  if (state.waiting) {
-    const needed = Math.max(0, MIN_CIRCLE_PLAYERS - waitingHere)
-    headline = needed > 0 ? `Waiting for ${needed} more` : 'Circle forming'
-    detail =
-      state.playersOnline > 1
-        ? 'Stay in the ring. Your avatar is waving - someone will see it.'
-        : 'You are the only one here. Tap Call to ping everyone in the World.'
-  } else if (onPad) {
-    headline = `You are on the ${PAD_NAMES[state.nearestPad]}`
-    detail =
-      waitingHere > 0
-        ? `${waitingHere} player(s) already waiting here. Tap Form Circle to join.`
-        : 'Tap Form Circle, then wait a moment for someone to join you.'
-  } else if (elsewhere) {
-    headline = `${elsewhere.count} waiting at the ${PAD_NAMES[elsewhere.padIndex]}`
-    detail = 'Walk over and tap Form Circle to play with them.'
-  } else {
-    headline = 'Find a Mood Pad'
-    detail = `Walk into one of the three glowing rings. Nearest is ${
-      PAD_NAMES[nearestPadIndexForHint()]
-    }, ${Math.max(0, Math.round(state.nearestPadDistance - PAD_RADIUS))}m away.`
-  }
-
-  return (
-    <Panel width={820} padding={SPACE.lg}>
-      <Text value={headline} fontSize={FONT.title} color={COLORS.text} width={740} />
-      <Text
-        value={detail}
-        fontSize={FONT.body}
-        color={COLORS.textDim}
-        width={760}
-        marginTop={SPACE.xs}
-      />
-
-      {state.waiting && waitingHere > 0 && (
-        <UiEntity uiTransform={{ width: 520, height: 26, margin: { top: SPACE.md } }}>
-          <ProgressBar
-            value={Math.min(1, waitingHere / MIN_CIRCLE_PLAYERS)}
-            fill={emotionColor(state.emotion)}
-          />
-        </UiEntity>
-      )}
-
-      <Row width="100%" justifyContent="center" marginTop={SPACE.md}>
-        <Text
-          value={`${state.playersOnline} here now  -  up to ${maxPossibleScore(
-            state.streakDays
-          )} points a circle`}
-          fontSize={FONT.small}
-          color={COLORS.textDim}
-          width={700}
-        />
-      </Row>
-    </Panel>
-  )
-}
-
-/** Nearest pad even when the player is outside all of them, for the hint text. */
-function nearestPadIndexForHint(): number {
-  return state.nearestPad >= 0 ? state.nearestPad : 0
 }
 
 /* -------------------------------------------------------------------------- */
@@ -520,85 +483,99 @@ function nearestPadIndexForHint(): number {
 /** The bottom-centre controls. Never the bottom-right - see the file header. */
 export function ActionRow() {
   const pad = state.myPad
-  const layout = getLayout()
 
-  // A live round replaces the whole row with the mini-game's own input.
   if (pad && pad.phase !== CirclePhase.Result) {
     return (
-      <UiEntity
-        uiTransform={{
-          width: '100%',
-          height: 210,
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-          padding: { bottom: layout.bottomGuard }
-        }}
-      >
+      <ActionColumn>
         <MiniGameAction round={roundFromPad(pad)} />
-      </UiEntity>
+      </ActionColumn>
     )
   }
 
   if (state.practice) {
     const practice = state.practice
     return (
-      <UiEntity
-        uiTransform={{
-          width: '100%',
-          height: 260,
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'flex-end',
-          padding: { bottom: layout.bottomGuard }
-        }}
-      >
-        {!practice.finished && <MiniGameAction round={roundFromPractice(practice, state.emotion)} />}
+      <ActionColumn>
+        {!practice.finished && (
+          <MiniGameAction round={roundFromPractice(practice, state.emotion)} />
+        )}
         <Row width="100%" justifyContent="center" marginTop={SPACE.sm}>
-          <IconButton label="Exit" onClick={() => stopPractice()} size={TOUCH.secondary} />
+          <IconButton icon={ICON.close} caption="Exit" onClick={() => stopPractice()} />
         </Row>
-      </UiEntity>
+      </ActionColumn>
     )
   }
 
   return (
-    <UiEntity
-      uiTransform={{
-        width: '100%',
-        height: 260,
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'flex-end',
-        padding: { bottom: layout.bottomGuard }
-      }}
-    >
+    <ActionColumn>
       <PrimaryAction />
       <Row width="100%" justifyContent="center" marginTop={SPACE.sm}>
         <IconButton
-          label="Board"
+          icon={ICON.board}
+          caption="Board"
           onClick={() => {
             state.screen = 'leaderboard'
           }}
         />
         {/*
-          The single most useful button when the plaza is empty: it tells everyone
-          in the World that somebody is here and waiting. Highlighted while you are
-          actually waiting, because that is when it matters.
+          The most useful button when the plaza is empty: it tells everyone in the
+          World that somebody is here and waiting. Highlighted while waiting.
         */}
         <IconButton
-          label="Call"
+          icon={ICON.call}
+          caption="Call"
           onClick={() => pingPlaza()}
           active={state.waiting}
           background={state.waiting ? COLORS.surface : COLORS.chip}
         />
-        <IconButton label="Practice" onClick={() => startPractice()} />
         <IconButton
-          label="Info"
+          icon={ICON.practice}
+          caption="Practice"
+          onClick={() => startPractice()}
+        />
+        <IconButton
+          icon={ICON.info}
+          caption="Info"
           onClick={() => {
             state.screen = 'info'
           }}
         />
       </Row>
+    </ActionColumn>
+  )
+}
+
+/**
+ * Fixed-height container for the bottom controls.
+ *
+ * Width-capped at 470 and centred, so it stays clear of the joystick on the left
+ * and the client's action buttons on the right.
+ */
+function ActionColumn(props: {
+  children?: ReactEcs.JSX.Element | ReactEcs.JSX.Element[] | (ReactEcs.JSX.Element | false)[]
+}) {
+  return (
+    <UiEntity
+      uiTransform={{
+        width: '100%',
+        height: BUDGET.actionRow,
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+        padding: { bottom: SPACE.md }
+      }}
+    >
+      <UiEntity
+        uiTransform={{
+          width: 470,
+          height: 'auto',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'flex-end'
+        }}
+      >
+        {props.children}
+      </UiEntity>
     </UiEntity>
   )
 }
@@ -607,14 +584,13 @@ export function ActionRow() {
 function PrimaryAction() {
   const onPad = state.nearestPad >= 0
 
-  // During the result phase the pad is still busy, so Form Circle would be
-  // refused with "That pad is mid-round" while the result card says "Stay on the
-  // pad to go again". Show the real state instead of offering a button that fails.
+  // During the result phase the pad is still busy, so Form Circle would be refused.
+  // Show the real state rather than a button that fails.
   if (state.myPad && state.myPad.phase === CirclePhase.Result) {
     return (
       <PrimaryButton
         label="Round complete"
-        sublabel="Stay put - the pad reopens in a moment"
+        sublabel="The pad reopens in a moment"
         onClick={() => {}}
         disabled
       />
@@ -624,8 +600,8 @@ function PrimaryAction() {
   if (state.waiting) {
     return (
       <PrimaryButton
-        label="Waiting - tap to cancel"
-        sublabel="Others can join you now"
+        label="Waiting"
+        sublabel="Tap to cancel"
         onClick={() => cancelWaiting()}
         background={COLORS.chip}
       />
@@ -636,13 +612,8 @@ function PrimaryAction() {
     return (
       <PrimaryButton
         label="Walk to a Mood Pad"
-        sublabel={
-          state.playersOnline > 1
-            ? `${state.playersOnline} players here now`
-            : 'Three glowing rings around the plaza'
-        }
+        sublabel="Three glowing rings"
         onClick={() => {
-          // Not a no-op: surfacing the map hint is the useful action here.
           state.screen = 'info'
         }}
         background={COLORS.chip}
@@ -654,7 +625,8 @@ function PrimaryAction() {
   return (
     <PrimaryButton
       label="Form Circle"
-      sublabel={`On the ${PAD_NAMES[state.nearestPad]}`}
+      sublabel={PAD_NAMES[state.nearestPad]}
+      icon={ICON.play}
       onClick={() => requestFormCircle()}
       background={emotionColor(state.emotion)}
       labelColor={COLORS.panel}
@@ -667,7 +639,7 @@ function PrimaryAction() {
 /* -------------------------------------------------------------------------- */
 
 /**
- * A transient toast, positioned just under the top bar.
+ * A transient toast, just under the top strip.
  *
  * Carries no pointer handler on purpose: a toast that swallowed taps would block
  * the game for as long as it was visible.
@@ -680,30 +652,26 @@ export function NoticeToast() {
     <UiEntity
       uiTransform={{
         width: '100%',
-        height: 90,
+        height: 52,
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'center',
+        margin: { top: SPACE.xs }
       }}
     >
       <UiEntity
         uiTransform={{
-          width: 820,
-          height: 76,
+          width: 700,
+          height: 44,
           alignItems: 'center',
           justifyContent: 'center',
           borderRadius: RADIUS.pill,
-          borderWidth: 3,
+          borderWidth: 2,
           borderColor: toneColor(notice.tone)
         }}
         uiBackground={{ color: COLORS.panel }}
       >
-        <Text
-          value={notice.text}
-          fontSize={FONT.body}
-          color={COLORS.text}
-          height={Math.round(FONT.body * 1.4)}
-        />
+        <Text value={notice.text} fontSize={FONT.small} color={COLORS.text} />
       </UiEntity>
     </UiEntity>
   )
@@ -712,10 +680,10 @@ export function NoticeToast() {
 /**
  * Connection state banner.
  *
- * Two genuinely different failures, shown differently on purpose. The room not
- * being synced is transient (about a second on load). The server not being alive
- * can mean a 15-second cold start, or a server that has not been woken at all -
- * so that case gets an explicit, honest message instead of a silent wait.
+ * Two genuinely different failures, shown differently. Room-not-synced is
+ * transient (about a second on load). Server-not-alive can mean a 15-second cold
+ * start, or a server nobody has woken - so that gets an explicit message rather
+ * than a silent wait.
  */
 export function ConnectionBanner() {
   if (state.serverAlive && state.roomReady) {
@@ -724,37 +692,49 @@ export function ConnectionBanner() {
 
   const message = !state.roomReady
     ? 'Connecting to the plaza...'
-    : 'Waking the Mood Match server - this can take about 15 seconds on a quiet day.'
+    : 'Waking the server - up to 15 seconds on a quiet day'
 
   return (
     <UiEntity
       uiTransform={{
         width: '100%',
-        height: 84,
+        height: 48,
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'center',
+        margin: { top: SPACE.xs }
       }}
     >
       <UiEntity
         uiTransform={{
-          width: 900,
-          height: 72,
+          width: 640,
+          height: 40,
           alignItems: 'center',
           justifyContent: 'center',
           borderRadius: RADIUS.pill,
-          borderWidth: 3,
+          borderWidth: 2,
           borderColor: COLORS.warn
         }}
         uiBackground={{ color: COLORS.panel }}
       >
-        <Text
-          value={message}
-          fontSize={FONT.small}
-          color={COLORS.warn}
-          height={Math.round(FONT.small * 1.4)}
-        />
+        <Text value={message} fontSize={FONT.tiny} color={COLORS.warn} />
       </UiEntity>
+    </UiEntity>
+  )
+}
+
+/** Kept for the progress bar import, used by the waiting indicator below. */
+export function WaitingProgress() {
+  if (!state.waiting) return <UiEntity uiTransform={{ width: 1, height: 1 }} />
+  const pad = state.nearestPad >= 0 ? state.pads[state.nearestPad] : undefined
+  const here = pad && pad.phase === CirclePhase.Gathering ? pad.members.length : 0
+
+  return (
+    <UiEntity uiTransform={{ width: 320, height: 16, margin: { top: SPACE.xs } }}>
+      <ProgressBar
+        value={Math.min(1, here / MIN_CIRCLE_PLAYERS)}
+        fill={emotionColor(state.emotion)}
+      />
     </UiEntity>
   )
 }

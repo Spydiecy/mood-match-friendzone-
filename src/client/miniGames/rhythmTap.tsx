@@ -11,8 +11,9 @@
  */
 
 import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
+import { Color4 } from '@dcl/sdk/math'
 import { RHYTHM_BEAT_MS, RHYTHM_SUCCESS_RATIO } from '../../shared/config'
-import { COLORS, FONT, RADIUS, SPACE, TOUCH, emotionColor } from '../ui/theme'
+import { COLORS, FONT, GLOW, RADIUS, SPACE, TOUCH, emotionColor } from '../ui/theme'
 import { ProgressBar, Row, Text } from '../ui/widgets'
 import { RoundView, countdownSeconds, inCountdown, secondsLeft } from './round'
 import { inputTap } from './input'
@@ -51,7 +52,7 @@ export function RhythmTapPanel(props: { round: RoundView }) {
   const flash = flashIntensity(now)
   const streak = tapStreak()
 
-  const baseSize = 190
+  const baseSize = 104
   // The ring swells on the beat AND kicks on a confirmed hit, so a well-timed tap
   // visibly lands rather than just being counted.
   const size = Math.round(baseSize * (1 + pulse * 0.28 + flash * 0.16))
@@ -68,18 +69,25 @@ export function RhythmTapPanel(props: { round: RoundView }) {
     <UiEntity
       uiTransform={{
         width: '100%',
-        height: 300,
+        height: 196,
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center'
       }}
     >
+      {/* Soft glow behind the ring, so the beat reads as light rather than an
+          outline. The texture is generated (images/glow.png), tinted here. */}
       <UiEntity
         uiTransform={{
-          width: 260,
-          height: 260,
+          width: 150,
+          height: 150,
           alignItems: 'center',
           justifyContent: 'center'
+        }}
+        uiBackground={{
+          texture: { src: GLOW },
+          textureMode: 'stretch',
+          color: Color4.create(ringColor.r, ringColor.g, ringColor.b, 0.25 + pulse * 0.5)
         }}
       >
         <UiEntity
@@ -89,7 +97,7 @@ export function RhythmTapPanel(props: { round: RoundView }) {
             alignItems: 'center',
             justifyContent: 'center',
             borderRadius: RADIUS.pill,
-            borderWidth: Math.round(8 + pulse * 8),
+            borderWidth: Math.round(5 + pulse * 6),
             borderColor: ringColor
           }}
           uiBackground={{ color: COLORS.surface }}
@@ -104,9 +112,8 @@ export function RhythmTapPanel(props: { round: RoundView }) {
                     ? 'OFF'
                     : 'TAP'
             }
-            fontSize={counting ? FONT.hero : FONT.title}
+            fontSize={counting ? FONT.title : FONT.heading}
             color={ringColor}
-            height={Math.round(FONT.hero * 1.2)}
           />
         </UiEntity>
       </UiEntity>
@@ -118,22 +125,21 @@ export function RhythmTapPanel(props: { round: RoundView }) {
               ? `${streak} in a row  -  group ${round.hits} / ${targetHits(round)}`
               : `Group taps ${round.hits} / ${targetHits(round)}`
           }
-          fontSize={FONT.body}
+          fontSize={FONT.small}
           color={streak >= 3 ? COLORS.good : COLORS.textDim}
           width={620}
         />
       </Row>
 
-      <UiEntity uiTransform={{ width: 560, height: 26, margin: { top: SPACE.sm } }}>
-        <ProgressBar value={round.progress} fill={ringColor} />
+      <UiEntity uiTransform={{ width: 470, height: 14, margin: { top: SPACE.xs } }}>
+        <ProgressBar value={round.progress} fill={ringColor} height={14} />
       </UiEntity>
 
       <Text
         value={counting ? 'Get ready' : `${secondsLeft(round, now)}s left`}
-        fontSize={FONT.small}
+        fontSize={FONT.tiny}
         color={COLORS.textDim}
         width={420}
-        marginTop={SPACE.xs}
       />
     </UiEntity>
   )
@@ -166,7 +172,7 @@ export function RhythmTapAction(props: { round: RoundView }) {
     <UiEntity
       uiTransform={{
         width: TOUCH.primaryWidth,
-        height: TOUCH.primaryHeight + 20,
+        height: TOUCH.primaryHeight,
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: RADIUS.pill,
@@ -189,7 +195,6 @@ export function RhythmTapAction(props: { round: RoundView }) {
         }
         fontSize={FONT.heading}
         color={ready ? (tapStreak() >= 2 ? COLORS.good : COLORS.text) : COLORS.textDim}
-        height={Math.round(FONT.heading * 1.3)}
       />
     </UiEntity>
   )

@@ -1,9 +1,13 @@
 /**
  * Mood Match - info and settings panel.
  *
- * Combines the things a player reaches for mid-session: mute, rerolling their
- * mood, the invite link, skin-unlock progress, a rules recap and a small
- * diagnostics row that makes support conversations much shorter.
+ * Rebuilt to FIT the 720-high canvas. The previous version was authored against
+ * 1080 of height, so on a phone its content overflowed the top of the screen and
+ * its only close button sat below the bottom edge - the player was trapped in a
+ * menu they could not dismiss. `Modal` now caps the height and always renders a
+ * close X in the header.
+ *
+ * Content is deliberately trimmed to what a player reaches for mid-session.
  */
 
 import ReactEcs, { Key, UiEntity } from '@dcl/sdk/react-ecs'
@@ -16,8 +20,8 @@ import { platformLabel } from '../utils/platform'
 import { clockOffset, clockReady } from '../utils/serverClock'
 import { currentRealm, openInvite } from '../utils/share'
 import { state } from '../state'
-import { COLORS, FONT, RADIUS, SPACE, TOUCH, emotionColor } from './theme'
-import { EmotionBadge, IconButton, Modal, Panel, PrimaryButton, Row, Text, Paragraph } from './widgets'
+import { COLORS, FONT, ICON, RADIUS, SPACE, emotionColor } from './theme'
+import { EmotionBadge, Icon, IconButton, Modal, Paragraph, Row, Text } from './widgets'
 
 /** Closes the panel. */
 function close(): void {
@@ -27,97 +31,78 @@ function close(): void {
 /** The info modal. */
 export function InfoPanel() {
   return (
-    <Modal>
-      <Panel width={980} padding={SPACE.lg}>
-        <Text value="Mood Match" fontSize={FONT.title} color={COLORS.text} width={860} />
-        <Paragraph
-          value={`Find other players, stand together in one of the three Mood Pads, and clear a 10-second mini-game as a group. Pads are ${PAD_NAMES.join(
-            ', '
-          )} - each ring is about ${PAD_RADIUS}m across.`}
-          lines={3}
-          fontSize={FONT.small}
-          marginBottom={SPACE.md}
-        />
+    <Modal title="Mood Match" onClose={close} width={980}>
+      <Paragraph
+        value={`Stand together with other players in one of the three Mood Pads - ${PAD_NAMES.join(
+          ', '
+        )}, each about ${PAD_RADIUS * 2}m across - and clear a 10-second mini-game as a group.`}
+        lines={2}
+        fontSize={FONT.small}
+        width={920}
+        marginBottom={SPACE.md}
+      />
 
-        {/* Mood picker */}
+      {/* Mood picker */}
+      <Row width="100%" justifyContent="space-between">
         <Text
           value="Your mood"
           fontSize={FONT.heading}
           color={COLORS.text}
-          width={860}
+          align="middle-left"
+          width={500}
         />
         <Text
-          value={
-            state.myPad
-              ? 'Locked while you are in a circle'
-              : 'Tap any mood to switch to it'
-          }
-          fontSize={FONT.small}
+          value={state.myPad ? 'Locked in a circle' : 'Tap to switch'}
+          fontSize={FONT.tiny}
           color={COLORS.textDim}
-          width={860}
-          marginBottom={SPACE.sm}
+          align="middle-right"
+          width={400}
         />
+      </Row>
 
-        <Row width="100%" justifyContent="center">
-          {EMOTIONS.map((emotion) => (
-            <MoodOption key={`pick-${emotion.id}`} emotion={emotion.id} />
-          ))}
-        </Row>
+      <Row width="100%" justifyContent="center" marginTop={SPACE.sm}>
+        {EMOTIONS.map((emotion) => (
+          <MoodOption key={`pick-${emotion.id}`} emotion={emotion.id} />
+        ))}
+      </Row>
 
-        <Row width="100%" justifyContent="center" marginTop={SPACE.sm}>
-          <Text
-            value={`Skins unlocked ${countUnlockedSkins(state.unlockedMask)} of ${
-              EMOTIONS.length
-            }  -  ${SKIN_UNLOCK_REQUIREMENT} successful circles with a mood unlocks it`}
-            fontSize={FONT.small}
-            color={COLORS.textDim}
-            width={860}
-          />
-        </Row>
+      <Text
+        value={`Skins ${countUnlockedSkins(state.unlockedMask)} of ${EMOTIONS.length}  -  ${SKIN_UNLOCK_REQUIREMENT} wins with a mood unlocks it`}
+        fontSize={FONT.tiny}
+        color={COLORS.textDim}
+        width={920}
+        marginTop={SPACE.sm}
+      />
 
-        {/* Controls */}
-        <Row width="100%" justifyContent="center" marginTop={SPACE.md}>
-          <IconButton
-            label={state.muted ? 'Sound off' : 'Sound on'}
-            onClick={() => toggleMute()}
-            active={!state.muted}
-            size={TOUCH.secondary + 20}
-          />
-          <IconButton
-            label="Reroll"
-            onClick={() => rerollEmotion()}
-            size={TOUCH.secondary + 20}
-          />
-          <IconButton
-            label="Invite"
-            onClick={() => openInvite()}
-            size={TOUCH.secondary + 20}
-          />
-          <IconButton
-            label="Board"
-            onClick={() => {
-              state.screen = 'leaderboard'
-            }}
-            size={TOUCH.secondary + 20}
-          />
-        </Row>
+      {/* Controls */}
+      <Row width="100%" justifyContent="center" marginTop={SPACE.md}>
+        <IconButton
+          icon={state.muted ? ICON.soundOff : ICON.soundOn}
+          caption={state.muted ? 'Muted' : 'Sound'}
+          onClick={() => toggleMute()}
+          active={!state.muted}
+        />
+        <IconButton icon={ICON.reroll} caption="Reroll" onClick={() => rerollEmotion()} />
+        <IconButton icon={ICON.invite} caption="Invite" onClick={() => openInvite()} />
+        <IconButton
+          icon={ICON.board}
+          caption="Board"
+          onClick={() => {
+            state.screen = 'leaderboard'
+          }}
+        />
+      </Row>
 
-        {/* Diagnostics */}
-        <Row width="100%" justifyContent="center" marginTop={SPACE.md}>
-          <Text
-            value={`${platformLabel()}  -  realm ${currentRealm()}  -  server ${
-              state.serverAlive ? 'live' : 'waking'
-            }  -  clock ${clockReady() ? `${clockOffset()}ms` : 'syncing'}`}
-            fontSize={FONT.small}
-            color={COLORS.textDim}
-            width={880}
-          />
-        </Row>
-
-        <Row width="100%" justifyContent="center" marginTop={SPACE.md}>
-          <PrimaryButton label="Back" onClick={() => close()} width={340} />
-        </Row>
-      </Panel>
+      {/* Diagnostics - makes a support conversation much shorter. */}
+      <Text
+        value={`${platformLabel()}  -  ${currentRealm()}  -  server ${
+          state.serverAlive ? 'live' : 'waking'
+        }  -  clock ${clockReady() ? `${clockOffset()}ms` : 'sync'}`}
+        fontSize={FONT.tiny}
+        color={COLORS.textDim}
+        width={920}
+        marginTop={SPACE.md}
+      />
     </Modal>
   )
 }
@@ -125,8 +110,8 @@ export function InfoPanel() {
 /**
  * One selectable mood.
  *
- * Shows unlock state as a subtle marker rather than gating selection: locking a
- * mood behind progress would shrink the combo space for everyone in your circle,
+ * Unlock state is shown as a marker rather than gating selection: locking a mood
+ * behind progress would shrink the combo space for everyone else in your circle,
  * which is the opposite of what a cooperative game wants.
  */
 function MoodOption(props: { key?: Key; emotion: number }) {
@@ -137,13 +122,13 @@ function MoodOption(props: { key?: Key; emotion: number }) {
   return (
     <UiEntity
       uiTransform={{
-        width: 138,
-        height: 176,
+        width: 122,
+        height: 116,
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: RADIUS.chip,
-        borderWidth: selected ? 4 : 0,
+        borderWidth: selected ? 3 : 0,
         borderColor: selected ? emotionColor(props.emotion) : COLORS.none,
         margin: { left: SPACE.xs, right: SPACE.xs },
         pointerFilter: 'block'
@@ -153,13 +138,12 @@ function MoodOption(props: { key?: Key; emotion: number }) {
         if (!locked) setEmotion(props.emotion)
       }}
     >
-      <EmotionBadge emotion={props.emotion} size={86} showName dimmed={locked} />
-      <Text
-        value={unlocked ? 'skin' : ''}
-        fontSize={FONT.small}
-        color={COLORS.warn}
-        height={Math.round(FONT.small * 1.3)}
-      />
+      <EmotionBadge emotion={props.emotion} size={56} showName dimmed={locked} />
+      {unlocked ? (
+        <Icon src={ICON.check} size={16} color={COLORS.warn} marginTop={2} />
+      ) : (
+        <UiEntity uiTransform={{ width: 1, height: 18 }} />
+      )}
     </UiEntity>
   )
 }

@@ -45,7 +45,7 @@ export function HoldZonesPanel(props: { round: RoundView }) {
     <UiEntity
       uiTransform={{
         width: '100%',
-        height: 300,
+        height: 196,
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center'
@@ -61,8 +61,8 @@ export function HoldZonesPanel(props: { round: RoundView }) {
             <UiEntity
               key={address}
               uiTransform={{
-                width: 132,
-                height: 168,
+                width: 96,
+                height: 104,
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -76,22 +76,19 @@ export function HoldZonesPanel(props: { round: RoundView }) {
               }}
             >
               <Text
-                value={lit ? 'HOLD' : 'OFF'}
-                fontSize={FONT.small}
-                color={lit ? COLORS.panel : COLORS.textDim}
-                height={Math.round(FONT.small * 1.3)}
-              />
-              <Text
-                value={isMe ? 'You' : shortName(round.memberNames[index] ?? '')}
-                fontSize={FONT.small}
-                color={lit ? COLORS.panel : COLORS.textDim}
-                height={Math.round(FONT.small * 1.3)}
-              />
-              <Text
                 value={getEmotion(emotion).glyph}
                 fontSize={FONT.heading}
                 color={lit ? COLORS.panel : emotionColor(emotion)}
-                height={Math.round(FONT.heading * 1.2)}
+              />
+              <Text
+                value={isMe ? 'You' : shortName(round.memberNames[index] ?? '')}
+                fontSize={FONT.tiny}
+                color={lit ? COLORS.panel : COLORS.textDim}
+              />
+              <Text
+                value={lit ? 'HOLD' : 'OFF'}
+                fontSize={FONT.tiny}
+                color={lit ? COLORS.panel : COLORS.textDim}
               />
             </UiEntity>
           )
@@ -106,16 +103,17 @@ export function HoldZonesPanel(props: { round: RoundView }) {
               ? 'All zones held - timer running'
               : 'Waiting on someone to hold'
         }
-        fontSize={FONT.body}
+        fontSize={FONT.small}
         color={everyone ? COLORS.good : COLORS.warn}
         width={640}
-        marginTop={SPACE.md}
+        marginTop={SPACE.sm}
       />
 
-      <UiEntity uiTransform={{ width: 560, height: 26, margin: { top: SPACE.sm } }}>
+      <UiEntity uiTransform={{ width: 470, height: 14, margin: { top: SPACE.xs } }}>
         <ProgressBar
           value={round.progress}
           fill={everyone ? COLORS.good : COLORS.warn}
+          height={14}
         />
       </UiEntity>
 
@@ -125,10 +123,9 @@ export function HoldZonesPanel(props: { round: RoundView }) {
             ? `Hold together for ${Math.round(HOLD_REQUIRED_MS / 1000)}s`
             : `${secondsLeft(round, now)}s left`
         }
-        fontSize={FONT.small}
+        fontSize={FONT.tiny}
         color={COLORS.textDim}
         width={520}
-        marginTop={SPACE.xs}
       />
     </UiEntity>
   )
@@ -157,7 +154,7 @@ export function HoldZonesAction(props: { round: RoundView }) {
     <UiEntity
       uiTransform={{
         width: TOUCH.primaryWidth,
-        height: TOUCH.primaryHeight + 20,
+        height: TOUCH.primaryHeight,
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: RADIUS.pill,
@@ -178,7 +175,6 @@ export function HoldZonesAction(props: { round: RoundView }) {
         value={held ? 'HOLDING' : ready ? 'PRESS AND HOLD' : 'GET READY'}
         fontSize={FONT.heading}
         color={held ? COLORS.panel : ready ? COLORS.text : COLORS.textDim}
-        height={Math.round(FONT.heading * 1.3)}
       />
     </UiEntity>
   )

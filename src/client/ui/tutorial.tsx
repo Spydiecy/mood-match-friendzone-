@@ -1,14 +1,14 @@
 /**
  * Mood Match - onboarding.
  *
- * Three screens, skippable from the first tap. It shows automatically on a
- * player's first visit and never again, which is derived from the server profile
- * (`circles > 0` means they have played) rather than from local storage - scenes
- * have no client-side persistence, but the server profile already survives.
+ * Three screens, skippable from the first tap. Shown on a player's first visit and
+ * never again, derived from the server profile (`circles === 0`) since scenes have
+ * no client-side persistence.
  *
- * Kept to three short screens because the brief's real requirement is that a new
- * player is playing within 30 seconds, and a long tutorial is the fastest way to
- * fail that.
+ * Rebuilt for the 720-high canvas: each screen is a single compact block that fits
+ * without scrolling, and `Modal` guarantees a reachable close control. The brief's
+ * real requirement is that a new player is PLAYING within 30 seconds, and a
+ * tutorial they have to fight is the fastest way to fail that.
  */
 
 import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
@@ -23,8 +23,8 @@ import {
 } from '../../shared/config'
 import { EMOTIONS } from '../../shared/emotions'
 import { state } from '../state'
-import { COLORS, FONT, SPACE, TOUCH } from './theme'
-import { EmotionBadge, IconButton, Modal, Panel, PrimaryButton, Row, Text, Paragraph } from './widgets'
+import { COLORS, FONT, ICON, SPACE, textHeight } from './theme'
+import { EmotionBadge, IconButton, Modal, Paragraph, PrimaryButton, Row, Text } from './widgets'
 
 /** How many screens the tutorial has. */
 const STEPS = 3
@@ -44,45 +44,37 @@ function nextStep(): void {
   state.tutorialStep++
 }
 
-/** The onboarding modal. Rendered only while it should be visible. */
+/** The onboarding modal. */
 export function Tutorial() {
   const step = state.tutorialStep
 
   return (
-    <Modal>
-      <Panel width={960} padding={SPACE.xl}>
-        <Text
-          value={`Mood Match  -  ${step + 1} of ${STEPS}`}
-          fontSize={FONT.small}
-          color={COLORS.textDim}
-          width={800}
+    <Modal title={`Mood Match  ${step + 1}/${STEPS}`} onClose={dismissTutorial} width={900}>
+      {step === 0 && <StepEmotion />}
+      {step === 1 && <StepCircle />}
+      {step === 2 && <StepScore />}
+
+      <Row width="100%" justifyContent="center" marginTop={SPACE.md}>
+        <IconButton icon={ICON.close} caption="Skip" onClick={() => dismissTutorial()} />
+        <UiEntity uiTransform={{ width: SPACE.md, height: 1 }} />
+        <PrimaryButton
+          label={step >= STEPS - 1 ? 'Play' : 'Next'}
+          icon={ICON.play}
+          onClick={() => nextStep()}
+          width={300}
         />
-
-        {step === 0 && <StepEmotion />}
-        {step === 1 && <StepCircle />}
-        {step === 2 && <StepScore />}
-
-        <Row width="100%" justifyContent="center" marginTop={SPACE.lg}>
-          <IconButton label="Skip" onClick={() => dismissTutorial()} size={TOUCH.secondary} />
-          <UiEntity uiTransform={{ width: SPACE.md, height: 1 }} />
-          <PrimaryButton
-            label={step >= STEPS - 1 ? "Let's play" : 'Next'}
-            onClick={() => nextStep()}
-            width={360}
-          />
-        </Row>
-      </Panel>
+      </Row>
     </Modal>
   )
 }
 
-/** Screen 1: you have an emotion. */
+/** Screen 1: you have a mood. */
 function StepEmotion() {
   return (
     <UiEntity
       uiTransform={{
         width: '100%',
-        height: 420,
+        height: 300,
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center'
@@ -90,29 +82,23 @@ function StepEmotion() {
     >
       <Text value="You have a mood" fontSize={FONT.title} color={COLORS.text} width={840} />
       <Paragraph
-        value="Everyone who arrives is given one of six moods. Your colour is your identity here - it decides which bonus patterns your group can hit."
-        lines={3}
-        fontSize={FONT.body}
+        value="Everyone who arrives gets one of six. Your colour is your identity here, and it decides which bonus patterns your group can hit."
+        lines={2}
+        width={840}
         marginBottom={SPACE.md}
       />
-
       <Row width="100%" justifyContent="center">
-        {EMOTIONS.slice(0, 3).map((emotion) => (
+        {EMOTIONS.map((emotion) => (
           <UiEntity
             key={`e-${emotion.id}`}
-            uiTransform={{ width: 150, height: 150, alignItems: 'center', justifyContent: 'center' }}
+            uiTransform={{
+              width: 128,
+              height: 108,
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
           >
-            <EmotionBadge emotion={emotion.id} size={104} showName />
-          </UiEntity>
-        ))}
-      </Row>
-      <Row width="100%" justifyContent="center">
-        {EMOTIONS.slice(3).map((emotion) => (
-          <UiEntity
-            key={`e-${emotion.id}`}
-            uiTransform={{ width: 150, height: 150, alignItems: 'center', justifyContent: 'center' }}
-          >
-            <EmotionBadge emotion={emotion.id} size={104} showName />
+            <EmotionBadge emotion={emotion.id} size={64} showName />
           </UiEntity>
         ))}
       </Row>
@@ -126,7 +112,7 @@ function StepCircle() {
     <UiEntity
       uiTransform={{
         width: '100%',
-        height: 420,
+        height: 300,
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center'
@@ -134,23 +120,23 @@ function StepCircle() {
     >
       <Text value="Form a circle" fontSize={FONT.title} color={COLORS.text} width={840} />
       <Paragraph
-        value={`Walk into one of the three glowing Mood Pads and tap Form Circle. When ${MIN_CIRCLE_PLAYERS} or more players are standing in the same ring, the circle locks in.`}
-        lines={3}
-        fontSize={FONT.body}
-        marginBottom={SPACE.md}
+        value={`Walk into a glowing Mood Pad and tap Form Circle. Once ${MIN_CIRCLE_PLAYERS} or more players are in the same ring, the circle locks in.`}
+        lines={2}
+        width={840}
+        marginBottom={SPACE.sm}
       />
       <Paragraph
         value={`Then you all play a ${Math.round(
           MINIGAME_DURATION_MS / 1000
-        )}-second mini-game together. Rhythm Tap, Hold Zones or Color Match - all three only work if the group cooperates.`}
-        lines={3}
-        fontSize={FONT.body}
-        marginBottom={SPACE.md}
+        )}-second mini-game together: Rhythm Tap, Hold Zones or Color Match. None of them can be cleared by one person carrying the group.`}
+        lines={2}
+        width={840}
+        marginBottom={SPACE.sm}
       />
       <Paragraph
-        value="No one else around? Tap Practice to try a mini-game solo. Practice does not score."
+        value="Nobody around? Tap Call to ping the World, or Practice to try one solo. Practice does not score."
         lines={2}
-        fontSize={FONT.small}
+        width={840}
       />
     </UiEntity>
   )
@@ -162,7 +148,7 @@ function StepScore() {
     <UiEntity
       uiTransform={{
         width: '100%',
-        height: 420,
+        height: 300,
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center'
@@ -180,9 +166,10 @@ function StepScore() {
       />
 
       <Paragraph
-        value="Scores are kept on a persistent leaderboard. One mood is featured every day, and five successful circles with the same mood unlocks its skin."
-        lines={3}
-        fontSize={FONT.small}
+        value="Scores persist on a shared leaderboard. One mood is featured each day, and five wins with a mood unlocks its skin."
+        lines={2}
+        width={840}
+        marginBottom={0}
       />
     </UiEntity>
   )
@@ -193,8 +180,8 @@ function ScoreLine(props: { label: string; value: string }) {
   return (
     <UiEntity
       uiTransform={{
-        width: 700,
-        height: 50,
+        width: 620,
+        height: textHeight(FONT.small) + 2,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between'
@@ -202,17 +189,17 @@ function ScoreLine(props: { label: string; value: string }) {
     >
       <Text
         value={props.label}
-        fontSize={FONT.body}
+        fontSize={FONT.small}
         color={COLORS.textDim}
         align="middle-left"
-        width={480}
+        width={430}
       />
       <Text
         value={props.value}
-        fontSize={FONT.body}
+        fontSize={FONT.small}
         color={COLORS.good}
         align="middle-right"
-        width={200}
+        width={170}
       />
     </UiEntity>
   )

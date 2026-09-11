@@ -178,7 +178,7 @@ material(font_crystal, (0.29, 0.62, 1.0), emissive=1.6, roughness=0.3)
 
 featured_sign = new_entity("FeaturedSign")
 transform(featured_sign, (CENTER[0], 3.15, CENTER[1]))
-text(featured_sign, "FEATURED TODAY", 2.2, (0.29, 0.62, 1.0))
+text(featured_sign, "FEATURED TODAY", 1.1, (0.29, 0.62, 1.0))
 billboard(featured_sign)
 
 # --- Mood Pads --------------------------------------------------------------
@@ -198,7 +198,7 @@ for label, x, z in PADS:
 for label, x, z in PADS:
     pad_label = new_entity(f"PadLabel_{label}")
     transform(pad_label, (x, 2.5, z))
-    text(pad_label, f"{label} PAD", 2.0)
+    text(pad_label, f"{label} PAD", 1.0)
     billboard(pad_label)
 
 # --- Leaderboard board ------------------------------------------------------
@@ -212,14 +212,14 @@ board_sign = new_entity("LeaderboardSign")
 # Rotated 180 degrees about Y so the text faces the plaza (toward -Z), and offset
 # just in front of the board face so it does not clip into it.
 transform(board_sign, (CENTER[0], 2.8, 30.5), rotation=(0, 1, 0, 0))
-text(board_sign, "TOP MOODS", 1.5)
+text(board_sign, "TOP MOODS", 0.8)
 
 welcome = new_entity("WelcomeSign")
 transform(welcome, (CENTER[0], 2.5, 9.0))
 text(
     welcome,
     "MOOD MATCH\nstand on a pad with someone\nand tap Form Circle",
-    1.7,
+    0.95,
 )
 billboard(welcome)
 
@@ -239,7 +239,7 @@ for index, (emotion_name, r, g, b) in enumerate(EMOTIONS):
 
     plate = new_entity(f"EmotionLabel_{index}")
     transform(plate, (x, 3.7, z))
-    text(plate, emotion_name.upper(), 1.5, (r, g, b))
+    text(plate, emotion_name.upper(), 0.8, (r, g, b))
     billboard(plate)
 
 # --- Audio ------------------------------------------------------------------

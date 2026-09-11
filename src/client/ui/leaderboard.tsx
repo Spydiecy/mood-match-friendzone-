@@ -2,18 +2,31 @@
  * Mood Match - leaderboard panel.
  *
  * Reads the synced `Leaderboard` component, which the Multiplayer Server rebuilds
- * whenever a circle resolves and persists to Storage. Scores therefore survive
- * server restarts and redeploys.
+ * whenever a circle resolves and persists to Storage, so scores survive server
+ * restarts and redeploys.
  *
- * The player's own row is highlighted, and if they are outside the top ten their
- * rank is shown underneath so the board is still meaningful to them.
+ * Two fixed columns of five rather than a scrolling list. Scroll containers are
+ * not reliably usable on the Unity mobile client, and the previous version put
+ * ~860px of rows in a 520px box - places 7 to 10 were potentially unreachable on
+ * a phone. All ten fit on screen now with no scrolling at all.
  */
 
 import ReactEcs, { Key, UiEntity } from '@dcl/sdk/react-ecs'
 import { LEADERBOARD_SIZE } from '../../shared/config'
 import { state } from '../state'
-import { COLORS, FONT, RADIUS, SPACE } from './theme'
-import { Modal, Panel, PrimaryButton, Row, Text } from './widgets'
+import { COLORS, FONT, ICON, RADIUS, SPACE, textHeight } from './theme'
+import { Icon, Modal, Row, Text } from './widgets'
+
+/** Height of one ranked row. */
+const ROW_HEIGHT = 52
+
+/** Shape of a row as held in client state. */
+interface BoardRowData {
+  address: string
+  name: string
+  score: number
+  circles: number
+}
 
 /** Closes the panel. */
 function close(): void {
@@ -26,91 +39,72 @@ export function LeaderboardPanel() {
   const inTopTen = rows.some((row) => row.address === state.myAddress)
 
   return (
-    <Modal>
-      <Panel width={900} padding={SPACE.lg}>
-        <Text value="Top moods" fontSize={FONT.title} color={COLORS.text} width={760} />
-        <Text
-          value={`${state.circlesAllTime} circles formed here all time`}
-          fontSize={FONT.small}
-          color={COLORS.textDim}
-          width={760}
-          marginBottom={SPACE.md}
-        />
+    <Modal title="Top moods" onClose={close} width={940}>
+      <Text
+        value={`${state.circlesAllTime} circles formed here all time`}
+        fontSize={FONT.tiny}
+        color={COLORS.textDim}
+        width={880}
+        marginBottom={SPACE.md}
+      />
 
-        {rows.length === 0 ? (
-          <UiEntity
-            uiTransform={{
-              width: 800,
-              height: 220,
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center'
-            }}
-          >
-            <Text
-              value="No circles yet today"
-              fontSize={FONT.heading}
-              color={COLORS.textDim}
-              width={700}
-            />
-            <Text
-              value="Be the first. Grab someone and form a circle."
-              fontSize={FONT.body}
-              color={COLORS.textDim}
-              width={700}
-            />
-          </UiEntity>
-        ) : (
-          /*
-            Two fixed columns rather than one scrolling list.
-
-            All ten rows are visible at once with no scrolling, because scroll
-            containers are not reliably usable on the Unity mobile client - a
-            520px container holding ~860px of rows would have left the bottom
-            four places unreachable on a phone.
-          */
-          <Row width="100%" justifyContent="center" alignItems="flex-start">
-            <BoardColumn
-              rows={rows.slice(0, 5)}
-              startRank={1}
-              myAddress={state.myAddress}
-            />
-            {rows.length > 5 && (
-              <BoardColumn
-                rows={rows.slice(5, 10)}
-                startRank={6}
-                myAddress={state.myAddress}
-              />
-            )}
-          </Row>
-        )}
-
-        {!inTopTen && state.rank > 0 && (
-          <UiEntity uiTransform={{ width: 440, height: ROW_HEIGHT + 14, margin: { top: SPACE.sm } }}>
-            <BoardRow
-              rank={state.rank}
-              name={state.myName || 'You'}
-              score={state.score}
-              circles={state.circles}
-              highlight
-            />
-          </UiEntity>
-        )}
-
-        <Row width="100%" justifyContent="center" marginTop={SPACE.md}>
-          <PrimaryButton label="Back" onClick={() => close()} width={340} />
+      {rows.length === 0 ? (
+        <UiEntity
+          uiTransform={{
+            width: 880,
+            height: 160,
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          <Icon src={ICON.board} size={40} color={COLORS.textDim} />
+          <Text
+            value="No circles yet"
+            fontSize={FONT.heading}
+            color={COLORS.textDim}
+            width={700}
+            marginTop={SPACE.sm}
+          />
+          <Text
+            value="Be the first - grab someone and form a circle"
+            fontSize={FONT.small}
+            color={COLORS.textDim}
+            width={700}
+          />
+        </UiEntity>
+      ) : (
+        <Row width="100%" justifyContent="center" alignItems="flex-start">
+          <BoardColumn rows={rows.slice(0, 5)} startRank={1} myAddress={state.myAddress} />
+          {rows.length > 5 && (
+            <BoardColumn rows={rows.slice(5, 10)} startRank={6} myAddress={state.myAddress} />
+          )}
         </Row>
-      </Panel>
+      )}
+
+      {/* Own rank, when outside the visible top ten. */}
+      {!inTopTen && state.rank > 0 && (
+        <UiEntity
+          uiTransform={{
+            width: 430,
+            height: ROW_HEIGHT + SPACE.sm,
+            margin: { top: SPACE.sm }
+          }}
+        >
+          <BoardRow
+            rank={state.rank}
+            name={state.myName || 'You'}
+            score={state.score}
+            circles={state.circles}
+            highlight
+          />
+        </UiEntity>
+      )}
     </Modal>
   )
 }
 
-/**
- * One column of up to five ranked rows.
- *
- * Fixed height per row and an explicit column height, so the layout is identical
- * on the Bevy and Unity explorers rather than depending on intrinsic sizing.
- */
+/** One column of up to five ranked rows, at a fixed height. */
 function BoardColumn(props: {
   key?: Key
   rows: BoardRowData[]
@@ -142,17 +136,6 @@ function BoardColumn(props: {
   )
 }
 
-/** Shape of a row as held in client state. */
-interface BoardRowData {
-  address: string
-  name: string
-  score: number
-  circles: number
-}
-
-/** Height of a single ranked row. */
-const ROW_HEIGHT = 76
-
 /** One row of the board. */
 function BoardRow(props: {
   key?: Key
@@ -171,7 +154,7 @@ function BoardRow(props: {
         alignItems: 'center',
         justifyContent: 'space-between',
         borderRadius: RADIUS.chip,
-        borderWidth: props.highlight ? 3 : 0,
+        borderWidth: props.highlight ? 2 : 0,
         borderColor: props.highlight ? COLORS.accent : COLORS.none,
         padding: { left: SPACE.md, right: SPACE.md },
         margin: { bottom: SPACE.xs }
@@ -179,40 +162,41 @@ function BoardRow(props: {
       uiBackground={{ color: props.highlight ? COLORS.surface : COLORS.chip }}
     >
       <Text
-        value={`#${props.rank}`}
+        value={`${props.rank}`}
         fontSize={FONT.small}
         color={props.rank === 1 ? COLORS.warn : COLORS.textDim}
         align="middle-left"
-        width={62}
+        width={44}
       />
       <Text
         value={trim(props.name)}
-        fontSize={FONT.body}
+        fontSize={FONT.small}
         color={COLORS.text}
         align="middle-left"
-        width={190}
+        width={200}
       />
       <Text
         value={`${props.circles}c`}
-        fontSize={FONT.small}
+        fontSize={FONT.tiny}
         color={COLORS.textDim}
         align="middle-right"
-        width={60}
+        width={54}
       />
       <Text
         value={String(props.score)}
         fontSize={FONT.heading}
         color={COLORS.text}
         align="middle-right"
-        width={94}
+        width={90}
+        height={textHeight(FONT.heading)}
       />
     </UiEntity>
   )
 }
 
-/** Keeps long display names from pushing the score off the row. */
+/** Keeps a long display name inside the row. */
 function trim(name: string): string {
-  if (!name) return 'Anonymous'
-  if (name.length <= 12) return name
-  return name.slice(0, 11) + '.'
+  if (!name) return 'anon'
+  if (name.length <= 13) return name
+  return name.slice(0, 12) + '.'
 }
