@@ -65,6 +65,16 @@ export interface ScoreInput {
    * 0 is the winner. Pass 0 when the round has no individual ranking.
    */
   finishRank: number
+  /**
+   * The highest mini-game score anyone in the circle achieved.
+   *
+   * Gates the placement bonus. `rankMembers` maps equal scores to the same rank, so a
+   * round where NOBODY scored ranked everyone 0 and paid every member the winner's
+   * bonus - while the result card, which gates its winner line on a top score above
+   * zero, showed no winner at all. The two panels described the same round
+   * differently. Placement now requires somebody to have actually done something.
+   */
+  topScore: number
 }
 
 /**
@@ -90,8 +100,9 @@ export function computeScore(input: ScoreInput): ScoreBreakdown {
   const combo = input.comboMatched ? POINTS_COMBO : 0
   const miniGame = input.miniGameSuccess ? POINTS_MINIGAME : 0
   const groupSize = groupSizeBonus(input.memberCount)
-  // Placement only exists when there is somebody to beat.
-  const placement = input.memberCount > 1 ? placementBonus(input.finishRank) : 0
+  // Placement needs somebody to beat AND somebody to have scored.
+  const ranked = input.memberCount > 1 && input.topScore > 0
+  const placement = ranked ? placementBonus(input.finishRank) : 0
 
   const featuredMultiplier =
     input.playerEmotion === input.featuredEmotion ? FEATURED_MULTIPLIER : 1

@@ -29,6 +29,7 @@ import { EMOTION_COUNT, EmotionId } from '../src/shared/types'
 import {
   CURIOSITY_CHANCE,
   CURIOSITY_MULTIPLIER,
+  ENERGY_EVERY,
   ENERGY_MULTIPLIER,
   FOCUS_EVERY,
   FOCUS_MULTIPLIER,
@@ -42,6 +43,7 @@ import {
 import {
   FEATURED_MULTIPLIER,
   MAX_CIRCLE_PLAYERS,
+  MINIGAME_DURATION_MS,
   MIN_CIRCLE_PLAYERS,
   PAD_POSITIONS,
   PAD_TIERS,
@@ -50,6 +52,9 @@ import {
   POINTS_MINIGAME,
   PLACEMENT_BONUSES,
   POINTS_PER_EXTRA_MEMBER,
+  REACTION_CUES,
+  REACTION_MAX_DELAY_MS,
+  TAP_RACE_TARGET,
   STREAK_MAX_BONUS,
   placementBonus,
   requiredForPad
@@ -240,7 +245,8 @@ const duoCeiling = computeScore({
   featuredEmotion: Joy,
   streakDays: 11,
   memberCount: 2,
-  finishRank: 0
+  finishRank: 0,
+  topScore: 1
 })
 check('duo ceiling', duoCeiling.total, Math.round((10 + 20 + 30 + 0 + PLACEMENT_BONUSES[0]) * 2 * 1.5))
 check('maxPossibleScore agrees (duo)', maxPossibleScore(11, 2), duoCeiling.total)
@@ -253,7 +259,8 @@ const squadCeiling = computeScore({
   featuredEmotion: Joy,
   streakDays: 11,
   memberCount: 4,
-  finishRank: 0
+  finishRank: 0,
+  topScore: 1
 })
 check('squad ceiling', squadCeiling.total, Math.round((10 + 20 + 30 + 10 + PLACEMENT_BONUSES[0]) * 2 * 1.5))
 check('maxPossibleScore agrees (squad)', maxPossibleScore(11, 4), squadCeiling.total)
@@ -321,7 +328,8 @@ const itemised = computeScore({
   featuredEmotion: Joy,
   streakDays: 3,
     memberCount: 2,
-  finishRank: 0
+  finishRank: 0,
+  topScore: 1
 })
 check(
   'breakdown reconciles',
@@ -388,8 +396,13 @@ for (let mood = 0; mood < EMOTION_COUNT; mood++) {
   }
 }
 
-// Energy: a flat multiplier, always active.
-check('surge multiplies', applyMoodPerk(EmotionId.Energy, 2, 1, 0.9).self, Math.ceil(2 * ENERGY_MULTIPLIER))
+// Energy: an INTERVAL, not a fractional multiplier.
+//
+// It used to be `ceil(baseAmount * 1.5)`, and since every call site passes a base of
+// 1 that resolved to 2 - a flat 2x, not the advertised +50%, and strictly the best
+// selfish perk. These cases pin the base amount the game actually uses.
+check('surge is quiet off-interval', applyMoodPerk(EmotionId.Energy, 1, ENERGY_EVERY - 1, 0.9).self, 1)
+check('surge doubles on interval', applyMoodPerk(EmotionId.Energy, 1, ENERGY_EVERY, 0.9).self, ENERGY_MULTIPLIER)
 
 // Focus: only every Nth action, and exactly N x.
 check('locked on is quiet off-beat', applyMoodPerk(EmotionId.Focus, 1, FOCUS_EVERY - 1, 0.9).self, 1)
@@ -427,6 +440,100 @@ checkTrue(
 checkTrue(
   'mixed circles are described',
   describeMoodBalance([EmotionId.Energy, EmotionId.Joy]).indexOf('1') !== -1
+)
+
+/* -------------------------------------------------------------------------- */
+/* Perk balance                                                              */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Expected value per scoring action for a mood, at the base amount the game actually
+ * uses (1). Averaged over a full interval cycle and over the wildcard probability.
+ */
+function perkExpectedValue(mood: EmotionId): number {
+  let total = 0
+  const cycle = 12
+  for (let counter = 1; counter <= cycle; counter++) {
+    // Average the roll-dependent branch analytically rather than sampling.
+    const low = applyMoodPerk(mood, 1, counter, 0).self
+    const high = applyMoodPerk(mood, 1, counter, 0.999).self
+    total += low * CURIOSITY_CHANCE + high * (1 - CURIOSITY_CHANCE)
+  }
+  return total / cycle
+}
+
+// No selfish perk may dominate the others. Energy was 2.0 against Focus 1.67 and
+// Curiosity 1.5 before it became an interval perk.
+const selfishEv = [EmotionId.Energy, EmotionId.Focus, EmotionId.Curiosity].map(perkExpectedValue)
+const spread = Math.max(...selfishEv) - Math.min(...selfishEv)
+checkTrue(
+  `selfish perks are within 0.25 EV of each other (spread ${spread.toFixed(2)})`,
+  spread <= 0.25
+)
+for (const mood of [EmotionId.Calm, EmotionId.Joy, EmotionId.Love]) {
+  check(`${getPerk(mood).id} does not inflate its own score`, perkExpectedValue(mood), 1)
+}
+
+/* -------------------------------------------------------------------------- */
+/* Round budgets                                                             */
+/* -------------------------------------------------------------------------- */
+
+// The worst-case Reaction schedule must fit inside a round, or the round is
+// unwinnable through no fault of the players. Was 4 cues x 2200ms = 8.8s in a 10s
+// round, leaving no room for reaction time.
+const worstCueSchedule = REACTION_CUES * REACTION_MAX_DELAY_MS
+checkTrue(
+  `reaction cues fit the round (${worstCueSchedule}ms of ${MINIGAME_DURATION_MS}ms)`,
+  worstCueSchedule < MINIGAME_DURATION_MS * 0.75
+)
+
+// Tap Race must be reachable. The objective counts RAW taps, so it is mood-independent
+// - this pins that it is humanly achievable at a sustainable rate.
+const tapsPerSecondNeeded = TAP_RACE_TARGET / (MINIGAME_DURATION_MS / 1000)
+checkTrue(
+  `tap race is reachable at ${tapsPerSecondNeeded.toFixed(1)} taps/sec`,
+  tapsPerSecondNeeded <= 4
+)
+
+// There must be a placement bonus defined for every seat in the biggest circle.
+checkTrue(
+  'a placement bonus exists for every seat',
+  PLACEMENT_BONUSES.length >= MAX_CIRCLE_PLAYERS
+)
+
+/* -------------------------------------------------------------------------- */
+/* Placement gating                                                          */
+/* -------------------------------------------------------------------------- */
+
+// A round nobody scored in must NOT pay a winner's bonus. rankMembers maps equal
+// scores to the same rank, so an all-zero round ranked everyone 1st and paid every
+// member the full bonus - while the result card showed no winner at all.
+check(
+  'no placement bonus when nobody scored',
+  computeScore({
+    comboMatched: false,
+    miniGameSuccess: false,
+    playerEmotion: Calm,
+    featuredEmotion: Joy,
+    streakDays: 1,
+    memberCount: 4,
+    finishRank: 0,
+    topScore: 0
+  }).placement,
+  0
+)
+checkTrue(
+  'placement is paid once somebody scores',
+  computeScore({
+    comboMatched: false,
+    miniGameSuccess: false,
+    playerEmotion: Calm,
+    featuredEmotion: Joy,
+    streakDays: 1,
+    memberCount: 4,
+    finishRank: 0,
+    topScore: 1
+  }).placement > 0
 )
 
 /* -------------------------------------------------------------------------- */

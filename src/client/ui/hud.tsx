@@ -515,8 +515,11 @@ function PayoutPanel() {
       borderColor={COLORS.good}
       textured
     >
-      <Text value="Points earned" fontSize={FONT.heading} color={COLORS.text} width={460} />
-      <Text value={`+${payout.total}`} fontSize={FONT.hero} color={COLORS.good} width={400} />
+      {/* Compressed: the breakdown can run to seven rows now that placement has its
+          own line, and at the previous sizes the total and the skin-unlock line were
+          clipped off the bottom of the panel. */}
+      <Text value="Points earned" fontSize={FONT.small} color={COLORS.textDim} width={460} />
+      <Text value={`+${payout.total}`} fontSize={FONT.title} color={COLORS.good} width={400} />
 
       <PayoutLine label="Circle formed" value={`+${payout.base}`} />
       {payout.combo > 0 && <PayoutLine label="Emotion combo" value={`+${payout.combo}`} />}
@@ -538,17 +541,17 @@ function PayoutPanel() {
       {streakPercent > 0 && <PayoutLine label="Streak bonus" value={`+${streakPercent}%`} />}
 
       <Text
-        value={`Total ${payout.newScore}   rank #${payout.rank}`}
-        fontSize={FONT.small}
+        value={`Total ${payout.newScore}  -  rank #${payout.rank}`}
+        fontSize={FONT.tiny}
         color={COLORS.textDim}
         width={460}
-        marginTop={SPACE.sm}
+        marginTop={SPACE.xs}
       />
 
       {payout.unlockedSkin >= 0 && (
         <Text
           value={`Unlocked: ${getEmotion(payout.unlockedSkin).name} skin`}
-          fontSize={FONT.small}
+          fontSize={FONT.tiny}
           color={COLORS.warn}
           width={460}
         />
@@ -570,7 +573,7 @@ function PayoutLine(props: { label: string; value: string }) {
     <UiEntity
       uiTransform={{
         width: 440,
-        height: textHeight(FONT.small) + 4,
+        height: textHeight(FONT.tiny) + 2,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between'
@@ -578,14 +581,14 @@ function PayoutLine(props: { label: string; value: string }) {
     >
       <Text
         value={props.label}
-        fontSize={FONT.small}
+        fontSize={FONT.tiny}
         color={COLORS.textDim}
         align="middle-left"
         width={300}
       />
       <Text
         value={props.value}
-        fontSize={FONT.small}
+        fontSize={FONT.tiny}
         color={COLORS.text}
         align="middle-right"
         width={120}

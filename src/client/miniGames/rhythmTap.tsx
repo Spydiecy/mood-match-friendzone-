@@ -53,7 +53,7 @@ export function RhythmTapPanel(props: { round: RoundView }) {
   const flash = flashIntensity(now)
   const streak = tapStreak()
 
-  const baseSize = 104
+  const baseSize = 84
   // The ring swells on the beat AND kicks on a confirmed hit, so a well-timed tap
   // visibly lands rather than just being counted.
   const size = Math.round(baseSize * (1 + pulse * 0.28 + flash * 0.16))
@@ -70,7 +70,10 @@ export function RhythmTapPanel(props: { round: RoundView }) {
     <UiEntity
       uiTransform={{
         width: '100%',
-        height: 196,
+        // Sized for the real content: glow 118 + streak 30 + beat dots 20 +
+        // standings 50 + bar 18 + caption 25. Declaring 196 while the content summed
+        // to 293 spilled the panel over the action row.
+        height: 264,
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center'
@@ -80,8 +83,8 @@ export function RhythmTapPanel(props: { round: RoundView }) {
           outline. The texture is generated (images/glow.png), tinted here. */}
       <UiEntity
         uiTransform={{
-          width: 150,
-          height: 150,
+          width: 118,
+          height: 118,
           alignItems: 'center',
           justifyContent: 'center'
         }}

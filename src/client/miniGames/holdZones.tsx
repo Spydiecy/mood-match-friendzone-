@@ -46,7 +46,8 @@ export function HoldZonesPanel(props: { round: RoundView }) {
     <UiEntity
       uiTransform={{
         width: '100%',
-        height: 196,
+        // tiles 104 + status 30 + standings 50 + bar 18 + caption 25.
+        height: 230,
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center'

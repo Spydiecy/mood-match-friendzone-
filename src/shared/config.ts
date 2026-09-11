@@ -178,12 +178,28 @@ export const SYNC_TARGET = 3
 /** Tap Race: taps needed to win the race. */
 export const TAP_RACE_TARGET = 24
 
-/** Reaction: how many cues fire in a round. */
-export const REACTION_CUES = 4
+/**
+ * Reaction: how many cues fire in a round.
+ *
+ * Sized so the WORST case fits the round: 3 cues x 1600ms max wait = 4.8s of waiting
+ * plus reaction time, inside a 10s round. At the previous 4 cues x 2200ms the tail of
+ * the delay distribution could not be cleared even with perfect play, which made the
+ * round unwinnable through no fault of the players. `check-logic` asserts the fit.
+ */
+export const REACTION_CUES = 3
 
 /** Reaction: shortest and longest wait before a cue fires, in ms. */
-export const REACTION_MIN_DELAY_MS = 900
-export const REACTION_MAX_DELAY_MS = 2200
+export const REACTION_MIN_DELAY_MS = 700
+export const REACTION_MAX_DELAY_MS = 1600
+
+/**
+ * Reaction: abandon a live cue nobody claims after this long.
+ *
+ * Needed because lockouts now persist into a live cue, so every member can be locked
+ * out at once - without this the cue would stay green and unclaimable for the rest of
+ * the round.
+ */
+export const CUE_EXPIRY_MS = 2500
 
 /**
  * Placement bonus by finishing position, best first.

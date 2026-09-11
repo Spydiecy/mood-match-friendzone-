@@ -51,8 +51,19 @@ export const FOCUS_EVERY = 3
 /** Focus multiplier when it lands. */
 export const FOCUS_MULTIPLIER = 3
 
-/** Energy's flat multiplier on discrete scoring actions. */
-export const ENERGY_MULTIPLIER = 1.5
+/**
+ * Energy doubles every Nth point rather than applying a fractional multiplier.
+ *
+ * WHY AN INTERVAL: a flat 1.5x multiplier is not expressible at integer scale. Every
+ * scoring action is worth 1 point, and `ceil(1 * 1.5)` is 2 - so the perk that
+ * advertised "+50%" actually paid DOUBLE, making it strictly the strongest selfish
+ * perk (2.0 expected value against Focus's 1.67 and Curiosity's 1.5). Doubling every
+ * second point is exactly 1.5x on average, and lands on whole numbers.
+ */
+export const ENERGY_EVERY = 2
+
+/** Energy's multiplier when it lands. */
+export const ENERGY_MULTIPLIER = 2
 
 /** How often Love feeds the rest of the circle. Every Nth scoring action. */
 export const LOVE_EVERY = 4
@@ -92,7 +103,7 @@ export const MOOD_PERKS: Record<EmotionId, MoodPerk> = {
   [EmotionId.Energy]: {
     id: 'surge',
     name: 'Surge',
-    blurb: `Your points are worth ${Math.round((ENERGY_MULTIPLIER - 1) * 100)}% more.`,
+    blurb: `Every ${ENERGY_EVERY}nd point you score counts ${ENERGY_MULTIPLIER}x.`,
     toleranceMultiplier: 1,
     generous: false
   },
@@ -128,13 +139,22 @@ export function toleranceFor(emotion: EmotionId | number): number {
   return getPerk(emotion).toleranceMultiplier
 }
 
-/** What a single scoring action produces once the mood perk is applied. */
+/**
+ * What a single scoring action produces once the mood perk is applied.
+ *
+ * IMPORTANT: `toLowest` and `toAll` may only ever be given to members who have
+ * scored at least once themselves this round. A generous perk is meant to help a
+ * player who is behind but TRYING; without that restriction, a Joy player tapping 24
+ * times in a Duo handed an idle partner 24 points, a tied first place and the full
+ * placement bonus for never touching the screen. The restriction is enforced at the
+ * call site, which is the only place that knows who has been active.
+ */
 export interface PerkOutcome {
   /** Points for the player who scored. Always at least `baseAmount`. */
   self: number
-  /** Points to give the current lowest-scoring OTHER member. */
+  /** Points for the lowest-scoring ACTIVE other member. */
   toLowest: number
-  /** Points to give every OTHER member. */
+  /** Points for every ACTIVE other member. */
   toAll: number
   /** True when the perk did something visible, for the UI flash. */
   triggered: boolean
@@ -167,8 +187,10 @@ export function applyMoodPerk(
 
   switch (perk.id) {
     case 'surge':
-      outcome.self = Math.ceil(baseAmount * ENERGY_MULTIPLIER)
-      outcome.triggered = outcome.self > baseAmount
+      if (counter > 0 && counter % ENERGY_EVERY === 0) {
+        outcome.self = baseAmount * ENERGY_MULTIPLIER
+        outcome.triggered = true
+      }
       break
 
     case 'lockedon':

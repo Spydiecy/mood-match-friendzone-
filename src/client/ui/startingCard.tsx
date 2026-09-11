@@ -22,7 +22,7 @@ import { EmotionId } from '../../shared/types'
 import { PAD_NAMES, padFillFor } from '../circle'
 import { miniGameBrief, miniGameName } from '../miniGames'
 import { state } from '../state'
-import { COLORS, FONT, RADIUS, SPACE, emotionColor } from './theme'
+import { BUDGET, COLORS, FONT, RADIUS, SPACE, emotionColor } from './theme'
 import { EmotionBadge, Panel, ProgressBar, Row, Text } from './widgets'
 
 /**
@@ -44,7 +44,17 @@ export function StartingCard() {
   const accent = go ? COLORS.good : emotionColor(state.emotion)
 
   return (
-    <Panel width={720} padding={SPACE.md} borderWidth={4} borderColor={accent} textured>
+    // maxHeight was missing here, and this was the only centre-stage panel without
+    // it. Its children summed to ~440 against a 372 budget, taking the whole column
+    // to 784 of 720 during the countdown - exactly when the action row matters most.
+    <Panel
+      width={720}
+      maxHeight={BUDGET.centreMax}
+      padding={SPACE.md}
+      borderWidth={4}
+      borderColor={accent}
+      textured
+    >
       <Text
         value={go ? 'GO' : 'GET READY'}
         fontSize={FONT.title}
@@ -81,7 +91,7 @@ export function StartingCard() {
       {/* The huge number. */}
       <Text
         value={go ? '!' : String(seconds)}
-        fontSize={FONT.hero}
+        fontSize={FONT.title}
         color={accent}
         width={200}
       />
@@ -93,40 +103,31 @@ export function StartingCard() {
         width={640}
       />
 
+      {/* Combo and the racer/supporter split share one line, to stay inside the
+          centre budget. */}
       <Text
         value={
           combo.bonus > 0
-            ? `${combo.name}  +${combo.bonus}`
-            : 'No combo bonus this time'
+            ? `${combo.name} +${combo.bonus}  -  ${describeMoodBalance(pad.memberEmotions)}`
+            : describeMoodBalance(pad.memberEmotions) || 'No combo bonus this time'
         }
         fontSize={FONT.small}
         color={combo.bonus > 0 ? COLORS.good : COLORS.textDim}
-        width={640}
+        width={660}
       />
 
       <Text
-        value={`Your perk: ${getPerk(state.emotion).name} - ${getPerk(state.emotion).blurb}`}
+        value={`${getPerk(state.emotion).name}: ${getPerk(state.emotion).blurb}`}
         fontSize={FONT.tiny}
         color={emotionColor(state.emotion)}
-        width={660}
-      />
-
-      {/* The racer/supporter split, so the group can see what kind of round this
-          is going to be before it starts. */}
-      <Text
-        value={describeMoodBalance(pad.memberEmotions)}
-        fontSize={FONT.tiny}
-        color={COLORS.textDim}
-        width={660}
+        width={680}
       />
 
       <Text
         value={miniGameBrief(pad.game)}
         fontSize={FONT.tiny}
         color={COLORS.textDim}
-        width={660}
-        wrap
-        lines={2}
+        width={680}
       />
 
       <UiEntity uiTransform={{ width: 470, height: 10, margin: { top: SPACE.xs } }}>

@@ -370,6 +370,8 @@ function award(
   // Rank by mini-game performance. Ties share a rank, so nobody is demoted by
   // array order.
   const ranks = rankMembers(members.map((_, index) => memberScores[index] ?? 0))
+  // Gates the placement bonus: a round nobody played pays nobody a winner's bonus.
+  const topScore = memberScores.reduce((best, score) => Math.max(best, score), 0)
 
   for (let index = 0; index < members.length; index++) {
     const record = members[index]
@@ -380,7 +382,8 @@ function award(
       featuredEmotion,
       streakDays: record.streakDays,
       memberCount: members.length,
-      finishRank: ranks[index] ?? 0
+      finishRank: ranks[index] ?? 0,
+      topScore
     })
 
     record.score += breakdown.total

@@ -17,7 +17,7 @@
 
 import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
 import { Color4 } from '@dcl/sdk/math'
-import { SYNC_TARGET, SYNC_WINDOW_MS } from '../../shared/config'
+import { SYNC_TARGET } from '../../shared/config'
 import { ZONE_START, ZONE_WIDTH, markerInZone, markerPosition } from '../../shared/syncTap'
 import { COLORS, FONT, RADIUS, SPACE, TOUCH, emotionColor } from '../ui/theme'
 import { ProgressBar, Row, Text } from '../ui/widgets'
@@ -181,6 +181,6 @@ export function SyncTapAction(props: { round: RoundView }) {
 }
 
 /** One-line explanation for the countdown and the tutorial. */
-export const SYNC_TAP_BRIEF = `Everyone taps at the same moment while the marker is in the green zone. ${SYNC_TARGET} syncs to clear. Count down out loud - you have about ${Math.round(
-  SYNC_WINDOW_MS / 100
-) / 10}s of slack.`
+// Deliberately does not quote a slack figure: the window is scaled per player by
+// their mood tolerance, so a single number would be wrong for a Calm player.
+export const SYNC_TAP_BRIEF = `Everyone taps at the same moment while the marker is in the green zone. ${SYNC_TARGET} syncs to clear. Count down out loud.`

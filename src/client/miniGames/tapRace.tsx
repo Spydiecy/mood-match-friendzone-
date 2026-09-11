@@ -18,7 +18,7 @@
 import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
 import { TAP_RACE_TARGET } from '../../shared/config'
 import { COLORS, FONT, RADIUS, SPACE, TOUCH, emotionColor } from '../ui/theme'
-import { ProgressBar, Row, Text } from '../ui/widgets'
+import { ProgressBar, Text } from '../ui/widgets'
 import { RoundView, countdownSeconds, inCountdown, secondsLeft } from './round'
 import { inputTap } from './input'
 import { Standings } from './standings'
@@ -37,7 +37,8 @@ export function TapRacePanel(props: { round: RoundView }) {
     <UiEntity
       uiTransform={{
         width: '100%',
-        height: 196,
+        // head 45 + bars 80 + standings 50 + caption 25.
+        height: 204,
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center'

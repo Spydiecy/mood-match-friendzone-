@@ -17,6 +17,7 @@
 import { Entity, engine } from '@dcl/sdk/ecs'
 import {
   CIRCLE_PROXIMITY,
+  CUE_EXPIRY_MS,
   COLOR_SEQUENCE_LENGTH,
   COUNTDOWN_MS,
   HOLD_EXPIRY_MS,
@@ -129,6 +130,18 @@ interface PadRuntime {
    */
   perkCounter: number[]
 
+  /* Tap Race ------------------------------------------------------------- */
+  /**
+   * Raw tap count per member, WITHOUT perk inflation.
+   *
+   * The objective and the progress bar read this, so "First to 24" means 24 actual
+   * taps for every mood. Comparing the perk-inflated `memberScore` against the
+   * target meant Energy needed 12 taps where Calm needed 24, and it inverted the
+   * perk design by making selfish moods clear the SHARED objective faster.
+   * `memberScore` still drives ranking, so perks continue to decide placement.
+   */
+  taps: number[]
+
   /* Reaction ------------------------------------------------------------- */
   /** Server clock at which the current cue fires. 0 when none is scheduled. */
   cueAt: number
@@ -238,6 +251,7 @@ export function initCircles(
       allHoldMs: 0,
       memberScore: [],
       perkCounter: [],
+      taps: [],
       cueAt: 0,
       cueLive: false,
       cuesDone: 0,
@@ -507,12 +521,19 @@ function scoreWithPerk(pad: PadRuntime, memberIndex: number, amount: number): vo
 
   bumpScore(pad, memberIndex, outcome.self)
 
-  // Feed the member who is currently last, excluding the scorer.
+  // Feed the lowest-scoring ACTIVE member, excluding the scorer.
+  //
+  // "Active" means they have scored at least once themselves this round. Without
+  // that filter a Joy player tapping 24 times in a Duo handed an idle partner 24
+  // points, a tied first place and the full placement bonus for doing nothing. A
+  // generous perk should help someone who is behind but trying, not carry a
+  // passenger.
   if (outcome.toLowest > 0 && pad.members.length > 1) {
     let lowestIndex = -1
     let lowest = Number.MAX_VALUE
     for (let i = 0; i < pad.members.length; i++) {
       if (i === memberIndex) continue
+      if ((pad.perkCounter[i] ?? 0) === 0) continue
       const score = pad.memberScore[i] ?? 0
       if (score < lowest) {
         lowest = score
@@ -522,10 +543,11 @@ function scoreWithPerk(pad: PadRuntime, memberIndex: number, amount: number): vo
     if (lowestIndex !== -1) bumpScore(pad, lowestIndex, outcome.toLowest)
   }
 
-  // Feed everyone except the scorer.
+  // Feed every ACTIVE member except the scorer, same reasoning.
   if (outcome.toAll > 0) {
     for (let i = 0; i < pad.members.length; i++) {
       if (i === memberIndex) continue
+      if ((pad.perkCounter[i] ?? 0) === 0) continue
       bumpScore(pad, i, outcome.toAll)
     }
   }
@@ -540,6 +562,8 @@ function scoreWithPerk(pad: PadRuntime, memberIndex: number, amount: number): vo
  * keeps a slower player glad to be in the circle rather than resentful.
  */
 function judgeTapRace(pad: PadRuntime, memberIndex: number): void {
+  // Raw taps drive the objective; the perk-weighted score drives placement.
+  pad.taps[memberIndex] = (pad.taps[memberIndex] ?? 0) + 1
   scoreWithPerk(pad, memberIndex, 1)
 }
 
@@ -572,24 +596,58 @@ function judgeReaction(pad: PadRuntime, memberIndex: number, now: number): void 
   // First claim wins the cue.
   scoreWithPerk(pad, memberIndex, 1)
   pad.cuesDone++
-  pad.cueLive = false
-  pad.cueLockout = []
-  pad.cueAt = pad.cuesDone >= REACTION_CUES ? 0 : now + nextCueDelay()
+  scheduleNextCue(pad, now)
 }
 
 /** Advances the Reaction cue schedule. Called from the playing tick. */
 function tickReaction(pad: PadRuntime, now: number): void {
   if (pad.game !== MiniGameKind.Reaction) return
-  if (pad.cueLive) return
+
+  if (pad.cueLive) {
+    // DEADLOCK GUARD. Now that lockouts actually persist into a live cue, it is
+    // possible for every member to have jumped the gun - and then nobody can claim
+    // the cue, `cueLive` stays true, and the client's GO plate sits green and
+    // unclaimable for the rest of the round. Abandon such a cue and move on.
+    const everyoneLockedOut =
+      pad.members.length > 0 && pad.cueLockout.length >= pad.members.length
+    // Also abandon a cue nobody claims, so one shy round cannot stall the rest.
+    const expired = now - pad.cueAt > CUE_EXPIRY_MS
+
+    if (everyoneLockedOut || expired) {
+      scheduleNextCue(pad, now)
+      writeProgress(pad, now, true)
+    }
+    return
+  }
+
   if (pad.cueAt === 0) return
   if (now < pad.cueAt) return
 
   pad.cueLive = true
-  pad.cueLockout = []
+  // NOTE: the lockout is deliberately NOT cleared here.
+  //
+  // It used to be, which silently disabled the entire anti-mash mechanic: the only
+  // moment the lockout is ever read is while a cue is live, so wiping it at the
+  // instant the cue fired made the guard in `judgeReaction` unreachable and a player
+  // holding the button down won every cue. Lockouts are cleared when the NEXT cue is
+  // scheduled instead - see `scheduleNextCue`.
+
   // Force the push. Progress is normally throttled to PROGRESS_PUSH_MS, which would
   // add up to 150ms of dead time to a reaction game - the one game where that delay
   // is the thing being measured.
   writeProgress(pad, now, true)
+}
+
+/**
+ * Schedules the next Reaction cue and clears the lockouts.
+ *
+ * Clearing here rather than at fire time is what makes the early-tap penalty real:
+ * a lockout earned during the wait survives into the cue it was earned for.
+ */
+function scheduleNextCue(pad: PadRuntime, now: number): void {
+  pad.cueLive = false
+  pad.cueLockout = []
+  pad.cueAt = pad.cuesDone >= REACTION_CUES ? 0 : now + nextCueDelay()
 }
 
 /** Bitmask with one bit set per member. */
@@ -627,7 +685,7 @@ function computeProgress(pad: PadRuntime): number {
     case MiniGameKind.SyncTap:
       return Math.min(1, pad.syncs / SYNC_TARGET)
     case MiniGameKind.TapRace: {
-      const best = pad.memberScore.reduce((m, v) => Math.max(m, v), 0)
+      const best = pad.taps.reduce((m, v) => Math.max(m, v), 0)
       return Math.min(1, best / TAP_RACE_TARGET)
     }
     case MiniGameKind.Reaction:
@@ -651,10 +709,8 @@ function objectiveMet(pad: PadRuntime): boolean {
     case MiniGameKind.SyncTap:
       return pad.syncs >= SYNC_TARGET
     case MiniGameKind.TapRace:
-      // Derived from the scores rather than a flag. A generous perk (Joy's "+1 to
-      // whoever is last") can push a DIFFERENT member over the line than the one
-      // who tapped, which a flag set inside judgeTapRace would miss entirely.
-      return pad.memberScore.some((score) => score >= TAP_RACE_TARGET)
+      // RAW taps, so the target means the same number of taps for every mood.
+      return pad.taps.some((count) => count >= TAP_RACE_TARGET)
     case MiniGameKind.Reaction:
       return pad.cuesDone >= REACTION_CUES
     default:
@@ -697,12 +753,23 @@ function refreshPadPresence(now: number): void {
       }
     }
 
+    // Only reset the dwell clock when the pad actually CHANGES, so standing still
+    // keeps accumulating time rather than being re-timed every tick.
     if (record.onPad !== padIndex) {
       record.onPad = padIndex
       record.onPadSince = now
-      // `ready` is now purely a display signal meaning "standing on a pad", which
-      // is what the client's waiting indicator reads.
-      record.ready = padIndex !== -1
+    }
+
+    // `ready` is DERIVED every tick, not written once on entry.
+    //
+    // It used to be set only inside the change guard above, while startCountdown,
+    // dropMember and abortPad all cleared it WITHOUT moving the player - so after a
+    // round a player standing in the ring kept `ready === false` forever, which
+    // silently killed their waving emote and the Call button highlight until they
+    // stepped off the pad and back on.
+    const derivedReady = padIndex !== -1 && record.activePad === -1
+    if (record.ready !== derivedReady || record.readyPad !== padIndex) {
+      record.ready = derivedReady
       record.readyPad = padIndex
       hooks?.publishStat(record)
     }
@@ -754,7 +821,10 @@ function tickGathering(pad: PadRuntime, now: number): void {
   // 3-second countdown doubles as the grace period - `tickCountdown` aborts if
   // anyone steps back out, so an accidental fill costs nobody a round.
   if (selected.length >= required) {
-    startCountdown(pad, selected.slice(0, Math.max(required, MIN_CIRCLE_PLAYERS)), now)
+    // Anyone standing on the pad who did not make this round is told so, and is
+    // first in line next time because selection is ordered by dwell time.
+    notifyPassedOver(pad.padIndex, selected, now)
+    startCountdown(pad, selected, now)
   }
 }
 
@@ -784,9 +854,14 @@ function selectCircleMembers(padIndex: number): PlayerRecord[] {
 
   const selected: PlayerRecord[] = []
   const limitSq = CIRCLE_PROXIMITY * CIRCLE_PROXIMITY
+  // Cap at the PAD'S OWN tier, not the global maximum. Capping at MAX_CIRCLE_PLAYERS
+  // meant three players on a Duo pad published a roster of 3 against a required 2,
+  // so the HUD and the in-world label both rendered "3/2" for a frame and then
+  // startCountdown silently dropped the third player with no explanation.
+  const capacity = Math.min(requiredForPad(padIndex), MAX_CIRCLE_PLAYERS)
 
   for (const candidate of candidates) {
-    if (selected.length >= MAX_CIRCLE_PLAYERS) break
+    if (selected.length >= capacity) break
 
     const candidatePosition = getPlayerPosition(candidate)
     if (!candidatePosition) continue
@@ -801,6 +876,28 @@ function selectCircleMembers(padIndex: number): PlayerRecord[] {
   }
 
   return selected
+}
+
+/**
+ * Tells anyone on the pad who was not seated that they are next.
+ *
+ * Being passed over used to be completely silent: the player stood in the ring while
+ * a round started around them with no explanation.
+ */
+function notifyPassedOver(padIndex: number, selected: PlayerRecord[], now: number): void {
+  for (const record of allPlayers()) {
+    if (record.activePad !== -1) continue
+    if (record.onPad !== padIndex) continue
+    if (now - record.onPadSince < PAD_DWELL_MS) continue
+    if (selected.indexOf(record) !== -1) continue
+
+    hooks?.notify(
+      record.address,
+      RefusalCode.PadBusy,
+      'This ring was full - you are first in line for the next round.',
+      NoticeTone.Info
+    )
+  }
 }
 
 /** Locks the roster, picks a mini-game, and starts the pre-round countdown. */
@@ -832,6 +929,7 @@ function startCountdown(pad: PadRuntime, members: PlayerRecord[], now: number): 
   pad.syncs = 0
   pad.memberScore = new Array<number>(pad.members.length).fill(0)
   pad.perkCounter = new Array<number>(pad.members.length).fill(0)
+  pad.taps = new Array<number>(pad.members.length).fill(0)
   pad.cuesDone = 0
   pad.cueLive = false
   pad.cueLockout = []
@@ -955,20 +1053,23 @@ function resolvePad(pad: PadRuntime, now: number, success: boolean): void {
   pad.phase = CirclePhase.Result
   pad.resultUntil = now + RESULT_MS
 
+  // Build the live roster AND its scores together, so the two arrays cannot drift.
+  //
+  // Previously `award` received the filtered record list alongside the FULL score
+  // array and indexed the latter by the former's index. That happened to be correct
+  // only because tickPlaying drains missing members immediately beforehand; any
+  // future path that resolved a pad without draining first would have paid the wrong
+  // players.
   const members: PlayerRecord[] = []
+  const scores: number[] = []
   for (let i = 0; i < pad.members.length; i++) {
     const record = findMember(pad, i)
-    if (record) members.push(record)
+    if (!record) continue
+    members.push(record)
+    scores.push(Math.round(pad.memberScore[i] ?? 0))
   }
 
-  pad.points =
-    hooks?.award(
-      members,
-      success,
-      pad.comboBonus > 0,
-      pad.circleId,
-      pad.memberScore.map((v) => Math.round(v))
-    ) ?? []
+  pad.points = hooks?.award(members, success, pad.comboBonus > 0, pad.circleId, scores) ?? []
 
   for (const record of members) {
     record.activePad = -1
@@ -1022,6 +1123,7 @@ function resetPad(pad: PadRuntime): void {
   pad.syncs = 0
   pad.memberScore = []
   pad.perkCounter = []
+  pad.taps = []
   pad.cueAt = 0
   pad.cueLive = false
   pad.cuesDone = 0
@@ -1068,6 +1170,18 @@ function dropMember(pad: PadRuntime, memberIndex: number): void {
   pad.syncTapAt.splice(memberIndex, 1)
   pad.memberScore.splice(memberIndex, 1)
   pad.perkCounter.splice(memberIndex, 1)
+  pad.taps.splice(memberIndex, 1)
+  // Empty until resolve, so this is defensive rather than load-bearing - but keeping
+  // every per-member array compacted uniformly means a future reader does not have to
+  // work out which ones are exceptions.
+  if (pad.points.length > memberIndex) pad.points.splice(memberIndex, 1)
+  if (pad.cueLockout.length > 0) {
+    // Lockouts are member INDICES, so they must be re-based past the removed slot or
+    // they alias onto the wrong player. Inert while the lockout was broken; real now.
+    pad.cueLockout = pad.cueLockout
+      .filter((index) => index !== memberIndex)
+      .map((index) => (index > memberIndex ? index - 1 : index))
+  }
   for (let i = 0; i < pad.beatHits.length; i++) {
     pad.beatHits[i] = compactMask(pad.beatHits[i], memberIndex)
   }

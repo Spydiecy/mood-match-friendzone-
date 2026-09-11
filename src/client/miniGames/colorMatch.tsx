@@ -60,7 +60,9 @@ export function ColorMatchPanel(props: { round: RoundView }) {
     <UiEntity
       uiTransform={{
         width: '100%',
-        height: 196,
+        // head 30 + sequence 60 + confirmations 40 + step dots 20 + standings 50 +
+        // bar 18 + caption 25.
+        height: 246,
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center'
@@ -90,8 +92,8 @@ export function ColorMatchPanel(props: { round: RoundView }) {
             <UiEntity
               key={`${index}-${emotion}`}
               uiTransform={{
-                width: 62,
-                height: 62,
+                width: 54,
+                height: 54,
                 alignItems: 'center',
                 justifyContent: 'center',
                 borderRadius: RADIUS.chip,
@@ -128,8 +130,8 @@ export function ColorMatchPanel(props: { round: RoundView }) {
               <UiEntity
                 key={`conf-${address}`}
                 uiTransform={{
-                  width: 84,
-                  height: 38,
+                  width: 80,
+                  height: 34,
                   alignItems: 'center',
                   justifyContent: 'center',
                   borderRadius: RADIUS.pill,

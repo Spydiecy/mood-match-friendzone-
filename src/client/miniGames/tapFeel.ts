@@ -17,6 +17,7 @@
  */
 
 import { RHYTHM_BEAT_MS, RHYTHM_TOLERANCE_MS } from '../../shared/config'
+import { toleranceFor } from '../../shared/moodPerks'
 import { RoundView } from './round'
 
 /** Outcome of the most recent tap. */
@@ -85,7 +86,12 @@ export function registerTap(round: RoundView, now: number): TapVerdict {
 
   const offset = Math.abs(elapsed - beat * RHYTHM_BEAT_MS)
 
-  if (offset > RHYTHM_TOLERANCE_MS) {
+  // Scale by the local player's own mood tolerance, exactly as the server does.
+  // Without this a Calm player - whose window is 60% wider server-side - was shown
+  // "OFF" and had their streak reset on taps the server actually credited.
+  const tolerance = RHYTHM_TOLERANCE_MS * toleranceFor(round.memberEmotions[round.myIndex] ?? 0)
+
+  if (offset > tolerance) {
     state.verdict = 'miss'
     state.at = now
     state.streak = 0

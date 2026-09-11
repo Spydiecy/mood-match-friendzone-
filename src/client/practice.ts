@@ -182,7 +182,9 @@ export function practiceTap(): void {
         practice.cuesDone >= REACTION_CUES ? 0 : now + practiceCueDelay()
       playSfx('tap')
     } else {
-      // Same penalty the server applies: an early tap costs you this cue.
+      // Solo approximation of the server's penalty. The real game locks you out of
+      // the CURRENT cue so a rival can take it; with nobody to lose it to, the
+      // equivalent cost is having to wait for a fresh cue.
       practice.cueAt = now + practiceCueDelay()
       playSfx('fail')
     }

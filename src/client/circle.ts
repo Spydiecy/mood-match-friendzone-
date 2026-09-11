@@ -225,8 +225,9 @@ export function padFill(): { here: number; required: number; padIndex: number } 
   if (state.nearestPad < 0) return null
   const view = state.pads[state.nearestPad]
   const required = view?.required ?? PAD_REQUIRED[state.nearestPad] ?? 2
-  const here =
-    view && view.phase === CirclePhase.Gathering ? view.members.length : view ? view.members.length : 0
+  // Both branches of the previous ternary were identical. During any non-Gathering
+  // phase the roster IS the locked-in circle, which is still the right count to show.
+  const here = view ? view.members.length : 0
   return { here, required, padIndex: state.nearestPad }
 }
 
