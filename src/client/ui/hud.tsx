@@ -21,6 +21,7 @@
 import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
 import { MIN_CIRCLE_PLAYERS } from '../../shared/config'
 import { getEmotion } from '../../shared/emotions'
+import { getPerk } from '../../shared/moodPerks'
 import { CirclePhase } from '../../shared/types'
 import {
   PAD_NAMES,
@@ -136,11 +137,14 @@ function MoodChip() {
           color={COLORS.text}
           align="middle-left"
         />
-        {/* Single line, nowrap. The two-line version clipped on a phone. */}
+        {/*
+          The PERK, not the word "mood". This is the line that tells a player their
+          mood does something - the previous version said nothing at all.
+        */}
         <Text
-          value={isFeatured ? 'x2 today' : 'mood'}
+          value={isFeatured ? `${getPerk(state.emotion).name}  x2` : getPerk(state.emotion).name}
           fontSize={FONT.tiny}
-          color={isFeatured ? COLORS.good : COLORS.textDim}
+          color={isFeatured ? COLORS.good : emotionColor(state.emotion)}
           align="middle-left"
         />
       </UiEntity>
@@ -352,12 +356,12 @@ function ActiveRound() {
       <Text
         value={
           pad.comboBonus > 0
-            ? `${pad.comboName}  +${pad.comboBonus}`
-            : 'No combo bonus - the circle still scores'
+            ? `${pad.comboName} +${pad.comboBonus}  -  your perk: ${getPerk(state.emotion).name}`
+            : `Your perk: ${getPerk(state.emotion).name} - ${getPerk(state.emotion).blurb}`
         }
         fontSize={FONT.tiny}
         color={pad.comboBonus > 0 ? COLORS.good : COLORS.textDim}
-        width={620}
+        width={720}
       />
 
       <MiniGamePanel round={round} />

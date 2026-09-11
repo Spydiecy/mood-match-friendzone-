@@ -25,9 +25,17 @@ import { RoundView, countdownSeconds, inCountdown, secondsLeft } from './round'
 import { inputTap } from './input'
 import { Standings } from './standings'
 
-/** True when a cue is live and claimable right now. */
-function cueLive(round: RoundView): boolean {
-  return round.cueAt > 0
+/**
+ * True when a cue is live and claimable right now.
+ *
+ * BOTH conditions are needed, and the time check is not redundant. A real round
+ * publishes `cueAt` only AFTER the cue has fired, so `> 0` alone would be enough
+ * there - but a PRACTICE round schedules its cue locally and so carries a FUTURE
+ * timestamp. Checking only `> 0` therefore showed GO for the entire practice round,
+ * making it unplayable. Comparing against the clock is correct for both.
+ */
+function cueLive(round: RoundView, now: number): boolean {
+  return round.cueAt > 0 && now >= round.cueAt
 }
 
 /** The centre visual: a big WAIT / GO plate. */
@@ -35,7 +43,7 @@ export function ReactionPanel(props: { round: RoundView }) {
   const round = props.round
   const now = Date.now()
   const counting = inCountdown(round, now)
-  const live = !counting && cueLive(round)
+  const live = !counting && cueLive(round, now)
   const mine = round.memberScore[round.myIndex] ?? 0
 
   return (
@@ -120,7 +128,7 @@ export function ReactionAction(props: { round: RoundView }) {
   const round = props.round
   const now = Date.now()
   const ready = !inCountdown(round, now)
-  const live = ready && cueLive(round)
+  const live = ready && cueLive(round, now)
 
   return (
     <UiEntity

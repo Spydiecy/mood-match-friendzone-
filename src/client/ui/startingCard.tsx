@@ -17,6 +17,7 @@
 import ReactEcs, { UiEntity } from '@dcl/sdk/react-ecs'
 import { COUNTDOWN_MS } from '../../shared/config'
 import { evaluateCombo, getEmotion } from '../../shared/emotions'
+import { describeMoodBalance, getPerk } from '../../shared/moodPerks'
 import { EmotionId } from '../../shared/types'
 import { PAD_NAMES, padFillFor } from '../circle'
 import { miniGameBrief, miniGameName } from '../miniGames'
@@ -104,6 +105,22 @@ export function StartingCard() {
       />
 
       <Text
+        value={`Your perk: ${getPerk(state.emotion).name} - ${getPerk(state.emotion).blurb}`}
+        fontSize={FONT.tiny}
+        color={emotionColor(state.emotion)}
+        width={660}
+      />
+
+      {/* The racer/supporter split, so the group can see what kind of round this
+          is going to be before it starts. */}
+      <Text
+        value={describeMoodBalance(pad.memberEmotions)}
+        fontSize={FONT.tiny}
+        color={COLORS.textDim}
+        width={660}
+      />
+
+      <Text
         value={miniGameBrief(pad.game)}
         fontSize={FONT.tiny}
         color={COLORS.textDim}
@@ -146,22 +163,28 @@ export function ComboPreview() {
     const mine = getEmotion(state.emotion)
     const featured = state.emotion === state.featuredEmotion
     return (
-      <Panel width={560} padding={SPACE.sm}>
+      <Panel width={620} padding={SPACE.sm}>
         <Text
           value={
             featured
-              ? `${mine.name} is featured today - you score double`
-              : `You are ${mine.name}`
+              ? `${mine.name}: ${getPerk(state.emotion).name} - and x2 points today`
+              : `${mine.name}: ${getPerk(state.emotion).name}`
           }
           fontSize={FONT.small}
-          color={featured ? COLORS.good : COLORS.text}
-          width={520}
+          color={featured ? COLORS.good : emotionColor(state.emotion)}
+          width={580}
         />
         <Text
-          value={`Waiting for ${Math.max(0, fill.required - fill.here)} more - different moods together score bonuses`}
+          value={getPerk(state.emotion).blurb}
           fontSize={FONT.tiny}
           color={COLORS.textDim}
-          width={520}
+          width={580}
+        />
+        <Text
+          value={`Waiting for ${Math.max(0, fill.required - fill.here)} more - swap mood at the centre font`}
+          fontSize={FONT.tiny}
+          color={COLORS.textDim}
+          width={580}
         />
       </Panel>
     )
@@ -204,6 +227,12 @@ export function ComboPreview() {
       />
       <Text
         value={combo.bonus > 0 ? combo.blurb : 'Try a different mood mix for a bonus'}
+        fontSize={FONT.tiny}
+        color={COLORS.textDim}
+        width={580}
+      />
+      <Text
+        value={describeMoodBalance(moods)}
         fontSize={FONT.tiny}
         color={COLORS.textDim}
         width={580}

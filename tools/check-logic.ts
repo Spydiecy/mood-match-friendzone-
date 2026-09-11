@@ -27,6 +27,19 @@ import {
 } from '../src/shared/scoring'
 import { EMOTION_COUNT, EmotionId } from '../src/shared/types'
 import {
+  CURIOSITY_CHANCE,
+  CURIOSITY_MULTIPLIER,
+  ENERGY_MULTIPLIER,
+  FOCUS_EVERY,
+  FOCUS_MULTIPLIER,
+  LOVE_EVERY,
+  MOOD_PERKS,
+  applyMoodPerk,
+  describeMoodBalance,
+  getPerk,
+  toleranceFor
+} from '../src/shared/moodPerks'
+import {
   FEATURED_MULTIPLIER,
   MAX_CIRCLE_PLAYERS,
   MIN_CIRCLE_PLAYERS,
@@ -338,6 +351,83 @@ for (let streak = 1; streak <= 12; streak++) {
   })
   checkTrue(`streak ${streak} total is an integer`, Number.isInteger(result.total))
 }
+
+/* -------------------------------------------------------------------------- */
+/* Mood perks                                                                */
+/* -------------------------------------------------------------------------- */
+
+// Every mood must have a distinct, described perk, or the loadout choice is fake.
+check('a perk for every mood', Object.keys(MOOD_PERKS).length, EMOTION_COUNT)
+check(
+  'perk ids are distinct',
+  new Set(Object.values(MOOD_PERKS).map((p) => p.id)).size,
+  EMOTION_COUNT
+)
+checkTrue(
+  'every perk has a name and a blurb',
+  Object.values(MOOD_PERKS).every((p) => p.name.length > 0 && p.blurb.length > 0)
+)
+// The whole design rests on there being both kinds, so assert both exist.
+checkTrue('at least one generous perk', Object.values(MOOD_PERKS).some((p) => p.generous))
+checkTrue('at least one selfish perk', Object.values(MOOD_PERKS).some((p) => !p.generous))
+
+// A perk may never REDUCE what a player earns - it is a perk, not a handicap.
+for (let mood = 0; mood < EMOTION_COUNT; mood++) {
+  for (let counter = 1; counter <= 12; counter++) {
+    for (const roll of [0, 0.24, 0.26, 0.99]) {
+      const outcome = applyMoodPerk(mood, 1, counter, roll)
+      checkTrue(
+        `perk ${getPerk(mood).id} never reduces self (n=${counter}, roll=${roll})`,
+        outcome.self >= 1
+      )
+      checkTrue(
+        `perk ${getPerk(mood).id} never gives negative to others`,
+        outcome.toLowest >= 0 && outcome.toAll >= 0
+      )
+    }
+  }
+}
+
+// Energy: a flat multiplier, always active.
+check('surge multiplies', applyMoodPerk(EmotionId.Energy, 2, 1, 0.9).self, Math.ceil(2 * ENERGY_MULTIPLIER))
+
+// Focus: only every Nth action, and exactly N x.
+check('locked on is quiet off-beat', applyMoodPerk(EmotionId.Focus, 1, FOCUS_EVERY - 1, 0.9).self, 1)
+check('locked on triples on beat', applyMoodPerk(EmotionId.Focus, 1, FOCUS_EVERY, 0.9).self, FOCUS_MULTIPLIER)
+check('locked on repeats', applyMoodPerk(EmotionId.Focus, 1, FOCUS_EVERY * 2, 0.9).self, FOCUS_MULTIPLIER)
+
+// Curiosity: gated purely on the roll, so it is deterministic under test.
+check('wildcard fires under the threshold', applyMoodPerk(EmotionId.Curiosity, 1, 1, 0).self, CURIOSITY_MULTIPLIER)
+check('wildcard misses over the threshold', applyMoodPerk(EmotionId.Curiosity, 1, 1, CURIOSITY_CHANCE + 0.01).self, 1)
+
+// Joy: always feeds the player who is last, and never inflates its own score.
+const joy = applyMoodPerk(EmotionId.Joy, 1, 1, 0.9)
+check('contagious feeds the last player', joy.toLowest, 1)
+check('contagious does not boost itself', joy.self, 1)
+
+// Love: feeds everyone, but only every Nth action.
+check('bond is quiet between beats', applyMoodPerk(EmotionId.Love, 1, LOVE_EVERY - 1, 0.9).toAll, 0)
+check('bond feeds everyone on beat', applyMoodPerk(EmotionId.Love, 1, LOVE_EVERY, 0.9).toAll, 1)
+
+// Calm changes the RULES, not the arithmetic: tolerance only.
+checkTrue('steady widens timing windows', toleranceFor(EmotionId.Calm) > 1)
+check('steady does not change score', applyMoodPerk(EmotionId.Calm, 1, 3, 0).self, 1)
+for (const mood of [EmotionId.Joy, EmotionId.Focus, EmotionId.Energy, EmotionId.Love, EmotionId.Curiosity]) {
+  check(`${getPerk(mood).id} leaves timing alone`, toleranceFor(mood), 1)
+}
+// An out-of-range mood must not produce a broken multiplier.
+check('unknown mood falls back to a sane tolerance', toleranceFor(99), toleranceFor(EmotionId.Calm))
+
+// The racer/supporter summary is what tells players the tension exists.
+check('balance is silent for a solo player', describeMoodBalance([EmotionId.Joy]), '')
+checkTrue(
+  'all-selfish circles are called out',
+  describeMoodBalance([EmotionId.Energy, EmotionId.Focus]).length > 0
+)
+checkTrue(
+  'mixed circles are described',
+  describeMoodBalance([EmotionId.Energy, EmotionId.Joy]).indexOf('1') !== -1
+)
 
 /* -------------------------------------------------------------------------- */
 

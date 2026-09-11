@@ -40,6 +40,7 @@ import {
   TAP_RACE_TARGET
 } from '../shared/config'
 import { requiredForPad } from '../shared/config'
+import { applyMoodPerk, toleranceFor } from '../shared/moodPerks'
 import { markerInZone } from '../shared/syncTap'
 import { evaluateCombo } from '../shared/emotions'
 import { NoticeTone, RefusalCode } from '../shared/messages'
@@ -122,10 +123,11 @@ interface PadRuntime {
    * six of them.
    */
   memberScore: number[]
-
-  /* Tap Race ------------------------------------------------------------- */
-  /** True once someone has reached the tap target. */
-  raceWon: boolean
+  /**
+   * How many discrete scoring actions each member has made this round.
+   * Drives the "every Nth point" perks (Focus, Love).
+   */
+  perkCounter: number[]
 
   /* Reaction ------------------------------------------------------------- */
   /** Server clock at which the current cue fires. 0 when none is scheduled. */
@@ -209,7 +211,9 @@ export function initCircles(
       stepMask: 0,
       resolved: false,
       success: false,
-      points: []
+      points: [],
+      memberScore: [],
+      cueAt: 0
     })
 
     syncPad(entity, padCircleSyncId(padIndex))
@@ -233,7 +237,7 @@ export function initCircles(
       holdSeenAt: [],
       allHoldMs: 0,
       memberScore: [],
-      raceWon: false,
+      perkCounter: [],
       cueAt: 0,
       cueLive: false,
       cuesDone: 0,
@@ -390,14 +394,17 @@ function judgeRhythmTap(pad: PadRuntime, memberIndex: number, now: number): void
   if (beat >= total) beat = total - 1
 
   const offset = Math.abs(elapsed - beat * RHYTHM_BEAT_MS)
-  if (offset > RHYTHM_TOLERANCE_MS) return
+  // Calm's perk widens this window, which is why it is the mood to pick when a
+  // group keeps narrowly missing a timing round.
+  const tolerance = RHYTHM_TOLERANCE_MS * toleranceFor(pad.memberEmotions[memberIndex] ?? 0)
+  if (offset > tolerance) return
 
   const bit = 1 << memberIndex
   if ((pad.beatHits[beat] & bit) !== 0) return
 
   pad.beatHits[beat] |= bit
   pad.hits++
-  bumpScore(pad, memberIndex, 1)
+  scoreWithPerk(pad, memberIndex, 1)
 }
 
 /**
@@ -420,7 +427,7 @@ function judgeColorTap(pad: PadRuntime, memberIndex: number, tapped: number): vo
   pad.stepMask |= 1 << memberIndex
   // Credit the contribution, so the player who keeps up scores higher than the one
   // the group is always waiting on.
-  bumpScore(pad, memberIndex, 1)
+  scoreWithPerk(pad, memberIndex, 1)
 
   if (pad.stepMask === fullMemberMask(pad)) {
     pad.step++
@@ -451,21 +458,77 @@ function judgeSyncTap(pad: PadRuntime, memberIndex: number, now: number): void {
 
   const everyoneTapped = pad.members.every((_, index) => {
     const at = pad.syncTapAt[index] ?? 0
-    return at > 0 && now - at <= SYNC_WINDOW_MS
+    if (at === 0) return false
+    // Each member's own tolerance applies, so one Calm player makes the whole sync
+    // easier to land - a small, legible reason to want one in the circle.
+    const window = SYNC_WINDOW_MS * toleranceFor(pad.memberEmotions[index] ?? 0)
+    return now - at <= window
   })
 
   if (everyoneTapped) {
     pad.syncs++
     // A sync belongs to the whole group, so everyone is credited equally. Sync Tap
-    // is deliberately the one round with no individual winner.
+    // is deliberately the one round with no individual winner, so this stays raw -
+    // a perk here would break the "everyone scores the same" guarantee it relies on.
     for (let i = 0; i < pad.members.length; i++) bumpScore(pad, i, 1)
     pad.syncTapAt = new Array<number>(pad.members.length).fill(0)
   }
 }
 
-/** Adds to a member's live score, growing the array if needed. */
+/**
+ * Adds to a member's live score. RAW - no mood perk applied.
+ *
+ * Used for continuous accumulation (Hold Zones' held time), where applying a perk
+ * like "give +1 to whoever is last" thirty times a second would break the game.
+ */
 function bumpScore(pad: PadRuntime, memberIndex: number, amount: number): void {
   pad.memberScore[memberIndex] = (pad.memberScore[memberIndex] ?? 0) + amount
+}
+
+/**
+ * Scores a DISCRETE action with the member's mood perk applied.
+ *
+ * This is where moods stop being decoration: the same tap is worth a different
+ * amount, or feeds a different player, depending on the mood its owner chose.
+ *
+ * The random roll is generated here so it stays server-side - a client must not be
+ * able to predict or influence a Curiosity wildcard.
+ */
+function scoreWithPerk(pad: PadRuntime, memberIndex: number, amount: number): void {
+  const emotion = pad.memberEmotions[memberIndex] ?? 0
+  pad.perkCounter[memberIndex] = (pad.perkCounter[memberIndex] ?? 0) + 1
+
+  const outcome = applyMoodPerk(
+    emotion,
+    amount,
+    pad.perkCounter[memberIndex],
+    Math.random()
+  )
+
+  bumpScore(pad, memberIndex, outcome.self)
+
+  // Feed the member who is currently last, excluding the scorer.
+  if (outcome.toLowest > 0 && pad.members.length > 1) {
+    let lowestIndex = -1
+    let lowest = Number.MAX_VALUE
+    for (let i = 0; i < pad.members.length; i++) {
+      if (i === memberIndex) continue
+      const score = pad.memberScore[i] ?? 0
+      if (score < lowest) {
+        lowest = score
+        lowestIndex = i
+      }
+    }
+    if (lowestIndex !== -1) bumpScore(pad, lowestIndex, outcome.toLowest)
+  }
+
+  // Feed everyone except the scorer.
+  if (outcome.toAll > 0) {
+    for (let i = 0; i < pad.members.length; i++) {
+      if (i === memberIndex) continue
+      bumpScore(pad, i, outcome.toAll)
+    }
+  }
 }
 
 /**
@@ -477,10 +540,7 @@ function bumpScore(pad: PadRuntime, memberIndex: number, amount: number): void {
  * keeps a slower player glad to be in the circle rather than resentful.
  */
 function judgeTapRace(pad: PadRuntime, memberIndex: number): void {
-  bumpScore(pad, memberIndex, 1)
-  if ((pad.memberScore[memberIndex] ?? 0) >= TAP_RACE_TARGET) {
-    pad.raceWon = true
-  }
+  scoreWithPerk(pad, memberIndex, 1)
 }
 
 /** A random wait before the next Reaction cue. */
@@ -510,7 +570,7 @@ function judgeReaction(pad: PadRuntime, memberIndex: number, now: number): void 
   if (pad.cueLockout.indexOf(memberIndex) !== -1) return
 
   // First claim wins the cue.
-  bumpScore(pad, memberIndex, 1)
+  scoreWithPerk(pad, memberIndex, 1)
   pad.cuesDone++
   pad.cueLive = false
   pad.cueLockout = []
@@ -526,6 +586,10 @@ function tickReaction(pad: PadRuntime, now: number): void {
 
   pad.cueLive = true
   pad.cueLockout = []
+  // Force the push. Progress is normally throttled to PROGRESS_PUSH_MS, which would
+  // add up to 150ms of dead time to a reaction game - the one game where that delay
+  // is the thing being measured.
+  writeProgress(pad, now, true)
 }
 
 /** Bitmask with one bit set per member. */
@@ -587,7 +651,10 @@ function objectiveMet(pad: PadRuntime): boolean {
     case MiniGameKind.SyncTap:
       return pad.syncs >= SYNC_TARGET
     case MiniGameKind.TapRace:
-      return pad.raceWon
+      // Derived from the scores rather than a flag. A generous perk (Joy's "+1 to
+      // whoever is last") can push a DIFFERENT member over the line than the one
+      // who tapped, which a flag set inside judgeTapRace would miss entirely.
+      return pad.memberScore.some((score) => score >= TAP_RACE_TARGET)
     case MiniGameKind.Reaction:
       return pad.cuesDone >= REACTION_CUES
     default:
@@ -764,7 +831,7 @@ function startCountdown(pad: PadRuntime, members: PlayerRecord[], now: number): 
   pad.syncTapAt = new Array<number>(pad.members.length).fill(0)
   pad.syncs = 0
   pad.memberScore = new Array<number>(pad.members.length).fill(0)
-  pad.raceWon = false
+  pad.perkCounter = new Array<number>(pad.members.length).fill(0)
   pad.cuesDone = 0
   pad.cueLive = false
   pad.cueLockout = []
@@ -954,7 +1021,7 @@ function resetPad(pad: PadRuntime): void {
   pad.syncTapAt = []
   pad.syncs = 0
   pad.memberScore = []
-  pad.raceWon = false
+  pad.perkCounter = []
   pad.cueAt = 0
   pad.cueLive = false
   pad.cuesDone = 0
@@ -1000,6 +1067,7 @@ function dropMember(pad: PadRuntime, memberIndex: number): void {
   pad.holdSeenAt.splice(memberIndex, 1)
   pad.syncTapAt.splice(memberIndex, 1)
   pad.memberScore.splice(memberIndex, 1)
+  pad.perkCounter.splice(memberIndex, 1)
   for (let i = 0; i < pad.beatHits.length; i++) {
     pad.beatHits[i] = compactMask(pad.beatHits[i], memberIndex)
   }

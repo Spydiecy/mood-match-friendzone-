@@ -13,6 +13,7 @@
 import ReactEcs, { Key, UiEntity } from '@dcl/sdk/react-ecs'
 import { PAD_RADIUS, SKIN_UNLOCK_REQUIREMENT } from '../../shared/config'
 import { EMOTIONS, countUnlockedSkins, isSkinUnlocked } from '../../shared/emotions'
+import { getPerk } from '../../shared/moodPerks'
 import { PAD_NAMES } from '../circle'
 import { rerollEmotion, setEmotion } from '../emotions'
 import { toggleMute } from '../audio'
@@ -52,7 +53,7 @@ export function InfoPanel() {
           width={500}
         />
         <Text
-          value={state.myPad ? 'Locked in a circle' : 'Tap to switch'}
+          value={state.myPad ? 'Locked in a circle' : 'Each mood plays differently'}
           fontSize={FONT.tiny}
           color={COLORS.textDim}
           align="middle-right"
@@ -65,6 +66,15 @@ export function InfoPanel() {
           <MoodOption key={`pick-${emotion.id}`} emotion={emotion.id} />
         ))}
       </Row>
+
+      {/* Spell out what the currently selected mood actually does. */}
+      <Text
+        value={getPerk(state.emotion).blurb}
+        fontSize={FONT.small}
+        color={emotionColor(state.emotion)}
+        width={920}
+        marginTop={SPACE.sm}
+      />
 
       <Text
         value={`Skins ${countUnlockedSkins(state.unlockedMask)} of ${EMOTIONS.length}  -  ${SKIN_UNLOCK_REQUIREMENT} wins with a mood unlocks it`}
@@ -123,7 +133,7 @@ function MoodOption(props: { key?: Key; emotion: number }) {
     <UiEntity
       uiTransform={{
         width: 122,
-        height: 116,
+        height: 128,
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
@@ -138,11 +148,17 @@ function MoodOption(props: { key?: Key; emotion: number }) {
         if (!locked) setEmotion(props.emotion)
       }}
     >
-      <EmotionBadge emotion={props.emotion} size={56} showName dimmed={locked} />
+      <EmotionBadge emotion={props.emotion} size={48} showName dimmed={locked} />
+      {/* The perk name is the reason to pick this mood over another. */}
+      <Text
+        value={getPerk(props.emotion).name}
+        fontSize={FONT.tiny}
+        color={selected ? emotionColor(props.emotion) : COLORS.textDim}
+      />
       {unlocked ? (
-        <Icon src={ICON.check} size={16} color={COLORS.warn} marginTop={2} />
+        <Icon src={ICON.check} size={14} color={COLORS.warn} />
       ) : (
-        <UiEntity uiTransform={{ width: 1, height: 18 }} />
+        <UiEntity uiTransform={{ width: 1, height: 14 }} />
       )}
     </UiEntity>
   )

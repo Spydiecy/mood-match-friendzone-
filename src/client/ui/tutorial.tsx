@@ -81,12 +81,18 @@ function StepEmotion() {
         justifyContent: 'center'
       }}
     >
-      <Text value="You have a mood" fontSize={FONT.title} color={COLORS.text} width={840} />
+      <Text value="Your mood is your perk" fontSize={FONT.title} color={COLORS.text} width={840} />
       <Paragraph
-        value="Everyone who arrives gets one of six. Your colour is your identity here, and it decides which bonus patterns your group can hit."
+        value="Each of the six moods plays differently. Energy scores more, Locked On triples every third point, Steady gets forgiving timing - while Contagious and Bond feed points to the players behind you."
+        lines={3}
+        width={840}
+        marginBottom={SPACE.sm}
+      />
+      <Paragraph
+        value="Racers win the placement bonus. Supporters help the group clear its shared goal, which pays everyone. Swap any time at the font in the middle."
         lines={2}
         width={840}
-        marginBottom={SPACE.md}
+        marginBottom={SPACE.sm}
       />
       <Row width="100%" justifyContent="center">
         {EMOTIONS.map((emotion) => (
